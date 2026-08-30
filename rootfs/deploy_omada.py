@@ -46,22 +46,40 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
     """Authenticate with Omada OpenAPI according to TP-Link OpenAPI Specification (Client Credentials Mode)."""
     logger.info("Authenticating with Omada Controller via OpenAPI Application Client...")
 
-    # Specification 2.3.1: Client Credentials Mode
-    # Endpoint: POST /openapi/authorize/token?grant_type=client_credentials
-    # Body: {"omadacId": "...", "client_id": "...", "client_secret": "..."}
-    primary_urls = [
-        f"{base_url}/openapi/authorize/token?grant_type=client_credentials",
-        f"{base_url}/openapi/v1/token?grant_type=client_credentials",
-        f"{base_url}/openapi/authorize/token",
-        f"{base_url}/openapi/v1/token"
-    ]
-    if omadac_id:
-        primary_urls.extend([
-            f"{base_url}/openapi/authorize/token?grant_type=client_credentials&omadacId={omadac_id}",
-            f"{base_url}/openapi/authorize/token?grant_type=client_credentials&omadac_id={omadac_id}",
-            f"{base_url}/{omadac_id}/openapi/authorize/token?grant_type=client_credentials",
-            f"{base_url}/{omadac_id}/openapi/v1/token?grant_type=client_credentials"
+    # Also build alternative URLs if base_url is port 8043 vs port 443
+    base_urls = [base_url]
+    if ":8043" in base_url:
+        base_urls.append(base_url.replace(":8043", ":443"))
+        base_urls.append(base_url.replace(":8043", ""))
+    elif ":443" in base_url:
+        base_urls.append(base_url.replace(":443", ":8043"))
+    else:
+        base_urls.append(f"{base_url}:443")
+        base_urls.append(f"{base_url}:8043")
+
+    candidate_endpoints = []
+    for b_url in base_urls:
+        candidate_endpoints.extend([
+            f"{b_url}/openapi/authorize/token?grant_type=client_credentials",
+            f"{b_url}/openapi/v1/token?grant_type=client_credentials",
+            f"{b_url}/openapi/authorize/token",
+            f"{b_url}/openapi/v1/token"
         ])
+        if omadac_id:
+            candidate_endpoints.extend([
+                f"{b_url}/openapi/authorize/token?grant_type=client_credentials&omadacId={omadac_id}",
+                f"{b_url}/openapi/authorize/token?grant_type=client_credentials&omadac_id={omadac_id}",
+                f"{b_url}/{omadac_id}/openapi/authorize/token?grant_type=client_credentials",
+                f"{b_url}/{omadac_id}/openapi/v1/token?grant_type=client_credentials"
+            ])
+
+    # De-duplicate endpoints
+    seen = set()
+    primary_urls = []
+    for ep in candidate_endpoints:
+        if ep not in seen:
+            seen.add(ep)
+            primary_urls.append(ep)
 
     payloads = [
         # Official TP-Link OpenAPI format
@@ -69,7 +87,7 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
         {"omadac_id": omadac_id, "client_id": client_id, "client_secret": client_secret},
         {"omadacId": omadac_id, "appId": client_id, "secret": client_secret},
         {"omadacId": omadac_id, "appKey": client_id, "appSecret": client_secret},
-        # Without omadacId inside JSON body (for standalone controllers)
+        # Without omadacId inside JSON body
         {"client_id": client_id, "client_secret": client_secret, "grant_type": "client_credentials"},
         {"client_id": client_id, "client_secret": client_secret},
         {"appId": client_id, "secret": client_secret}
@@ -79,12 +97,10 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
         for payload in payloads:
             current_payload = {k: v for k, v in payload.items() if v is not None}
             try:
-                res = session.post(url, json=current_payload, timeout=15)
-                
+                res = session.post(url, json=current_payload, timeout=10)
                 try:
                     data = res.json()
                 except Exception:
-                    logger.debug(f"Non-JSON response from {url} (HTTP {res.status_code}): {res.text[:100]}")
                     continue
 
                 if data.get("errorCode") == 0:
@@ -101,7 +117,7 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
                 else:
                     msg = data.get("msg") or data.get("message")
                     code = data.get("errorCode")
-                    logger.debug(f"OpenAPI attempt at {url} returned error code {code}: {msg}")
+                    logger.warning(f"OpenAPI attempt at {url} returned [{code}]: {msg}")
             except Exception as exc:
                 logger.debug(f"OpenAPI connection error at {url}: {exc}")
 

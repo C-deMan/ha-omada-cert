@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0] - 2026-08-30
+
+### Fixed
+- Added dual-port probing for OpenAPI: Omada Controller hosts OpenAPI on port `443` (as designated in *Interface Access Address*) while management UI is on `8043`. The add-on now automatically tests both ports.
+- Enhanced detailed error logging with exact error messages and codes returned by Omada.
+
 ## [1.0.9] - 2026-08-30
 
 ### Fixed
