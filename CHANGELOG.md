@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.2] - 2026-08-31
+
+### Added
+- **Explicit Certificate Enablement**: Added `enable_openapi_certificate` API call after certificate and RSA key uploads to set `enable: true` in Omada Controller system settings.
+
 ## [1.3.1] - 2026-08-31
 
 ### Fixed

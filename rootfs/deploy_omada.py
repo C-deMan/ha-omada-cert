@@ -197,6 +197,54 @@ def get_openapi_certificate_info(session, base_urls, token, omadac_id):
     return None
 
 
+def enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="fullchain.pem", key_name="privkey.pem", cer_type="PEM"):
+    """Enable the uploaded certificate in Omada controller settings via OpenAPI."""
+    headers_list = [
+        {"Authorization": f"AccessToken={token}", "Content-Type": "application/json"},
+        {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token, "Content-Type": "application/json"},
+        {"Authorization": f"Bearer {token}", "accessToken": token, "Content-Type": "application/json"}
+    ]
+
+    enable_urls = []
+    for b_url in base_urls:
+        if omadac_id:
+            enable_urls.extend([
+                f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate",
+                f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate",
+                f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate/enable",
+                f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate/enable"
+            ])
+        enable_urls.extend([
+            f"{b_url}/openapi/v1/system/setting/certificate",
+            f"{b_url}/openapi/v1/system/setting/certificate/enable"
+        ])
+
+    payloads = [
+        {"enable": True, "cerName": cer_name, "keyName": key_name, "cerType": cer_type},
+        {"enable": True, "cerType": cer_type},
+        {"enable": True}
+    ]
+
+    seen = set()
+    for u in enable_urls:
+        if u in seen:
+            continue
+        seen.add(u)
+        for payload in payloads:
+            for headers in headers_list:
+                for method in [session.patch, session.put, session.post]:
+                    try:
+                        res = method(u, headers=headers, json=payload, timeout=10)
+                        if res.status_code == 200:
+                            data = res.json()
+                            if data.get("errorCode") == 0:
+                                logger.info(f"Successfully enabled custom certificate in Omada settings via {u}!")
+                                return True
+                    except Exception as exc:
+                        logger.debug(f"Exception enabling certificate at {u}: {exc}")
+    return False
+
+
 def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes, key_bytes, combined_pem_bytes):
     """Upload SSL Certificate and Key via official Omada OpenAPI endpoints."""
     headers_list = [
@@ -270,6 +318,8 @@ def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes
             break
 
     if cert_uploaded and key_uploaded:
+        # Attempt to explicitly set enable=True via API
+        enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="fullchain.pem", key_name="privkey.pem", cer_type="PEM")
         time.sleep(1)
         updated_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
         if updated_cert is not None:
@@ -289,6 +339,7 @@ def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes
                     res_json = res.json()
                     if res_json.get("errorCode") == 0:
                         logger.info("Combined certificate bundle uploaded via OpenAPI!")
+                        enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="omada_cert.pem", cer_type="PEM")
                         time.sleep(1)
                         updated_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
                         if updated_cert is not None:
