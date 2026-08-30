@@ -344,6 +344,18 @@ def main():
         sys.exit(1)
 
     success = upload_ssl_certificate(session, url, token, omadac_id, auth_type, cert_path, key_path)
+
+    # If OpenAPI upload was unsupported (-1600 or failed) and user/pass credentials are provided, try Web API session fallback
+    if not success and auth_type == "openapi" and has_userpass:
+        logger.info("OpenAPI SSL certificate endpoint is unsupported or restricted by this Controller version.")
+        logger.info("Falling back to Omada Web API session login (username & password) to install certificate...")
+        session_web = requests.Session()
+        session_web.verify = verify_ssl
+        web_token, web_omadac_id, web_auth_type = authenticate_user_pass(session_web, url, username, password, omadac_id)
+        if web_token:
+            success = upload_ssl_certificate(session_web, url, web_token, web_omadac_id, web_auth_type, cert_path, key_path)
+            logout_omada(session_web, url, web_token, web_omadac_id, web_auth_type)
+
     logout_omada(session, url, token, omadac_id, auth_type)
 
     if not success:

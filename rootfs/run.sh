@@ -3,6 +3,39 @@ set -e
 
 CONFIG_PATH="/data/options.json"
 
+# Set timezone: Check Supervisor API, user config, or TZ env
+setup_timezone() {
+    local detected_tz=""
+
+    # 1. Check user configured timezone in options.json
+    if [ -f "$CONFIG_PATH" ]; then
+        detected_tz=$(jq --raw-output '.timezone // empty' "$CONFIG_PATH" 2>/dev/null || true)
+    fi
+
+    # 2. If not specified, query Home Assistant Supervisor Core API
+    if [ -z "$detected_tz" ] && [ -n "$SUPERVISOR_TOKEN" ]; then
+        detected_tz=$(curl -s -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+            -H "Content-Type: application/json" \
+            http://supervisor/core/info 2>/dev/null | jq --raw-output '.data.time_zone // empty' 2>/dev/null || true)
+    fi
+
+    # 3. Fallback to existing TZ env variable if present
+    if [ -z "$detected_tz" ] && [ -n "$TZ" ]; then
+        detected_tz="$TZ"
+    fi
+
+    # Apply detected timezone if valid tzdata file exists
+    if [ -n "$detected_tz" ] && [ -f "/usr/share/zoneinfo/${detected_tz}" ]; then
+        export TZ="$detected_tz"
+        cp "/usr/share/zoneinfo/${detected_tz}" /etc/localtime 2>/dev/null || true
+        echo "$detected_tz" > /etc/timezone 2>/dev/null || true
+    elif [ -n "$detected_tz" ]; then
+        export TZ="$detected_tz"
+    fi
+}
+
+setup_timezone
+
 log() {
     local level="$1"
     shift

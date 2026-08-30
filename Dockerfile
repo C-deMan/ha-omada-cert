@@ -6,6 +6,7 @@ RUN \
     apk add --no-cache \
         openssl \
         ca-certificates \
+        tzdata \
         bash \
         jq \
         curl \

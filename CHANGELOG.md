@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.2] - 2026-08-30
+
+### Added
+- **Automatic Local Timezone Detection**: Container now automatically detects and adopts the local timezone from Home Assistant Supervisor (`http://supervisor/core/info` / `homeassistant_api: true`) or custom `timezone` configuration option, ensuring all logs match local system time instead of UTC.
+- Added `tzdata` package to image build.
+
+### Fixed
+- **Omada SSL Certificate Upload Fallback**: Omada OpenAPI specification natively delegates controller-level SSL maintenance to session-based Web APIs. If the controller returns `-1600 Unsupported request path` during OpenAPI upload, the deployment seamlessly falls back to Web API session authentication (`/api/v2/login`) to complete the certificate installation.
+
 ## [1.1.1] - 2026-08-30
 
 ### Fixed
