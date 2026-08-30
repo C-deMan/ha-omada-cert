@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.6] - 2026-08-31
+
+### Fixed
+- Prioritized OpenAPI port 443 routes during discovery and authentication to eliminate probing delays on port 8043.
+- Added automatic before-and-after certificate status verification to log the updated `cerType`, `enable`, and certificate name directly from Omada.
+
 ## [1.1.5] - 2026-08-31
 
 ### Added

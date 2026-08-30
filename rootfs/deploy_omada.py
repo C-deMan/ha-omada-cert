@@ -46,16 +46,14 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
     """Authenticate with Omada OpenAPI according to TP-Link OpenAPI Specification (Client Credentials Mode)."""
     logger.info("Authenticating with Omada Controller via OpenAPI Application Client...")
 
-    # Also build alternative URLs if base_url is port 8043 vs port 443
-    base_urls = [base_url]
-    if ":8043" in base_url:
-        base_urls.append(base_url.replace(":8043", ":443"))
-        base_urls.append(base_url.replace(":8043", ""))
-    elif ":443" in base_url:
-        base_urls.append(base_url.replace(":443", ":8043"))
+    # Prioritize port 443 where Omada OpenAPI Interface is hosted
+    base_urls = []
+    if ":443" in base_url:
+        base_urls = [base_url, base_url.replace(":443", ":8043")]
+    elif ":8043" in base_url:
+        base_urls = [base_url.replace(":8043", ":443"), base_url, base_url.replace(":8043", "")]
     else:
-        base_urls.append(f"{base_url}:443")
-        base_urls.append(f"{base_url}:8043")
+        base_urls = [f"{base_url}:443", f"{base_url}:8043", base_url]
 
     candidate_endpoints = []
     for b_url in base_urls:
@@ -117,7 +115,7 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
                 else:
                     msg = data.get("msg") or data.get("message")
                     code = data.get("errorCode")
-                    logger.warning(f"OpenAPI attempt at {url} returned [{code}]: {msg}")
+                    logger.debug(f"OpenAPI attempt at {url} returned [{code}]: {msg}")
             except Exception as exc:
                 logger.debug(f"OpenAPI connection error at {url}: {exc}")
 
@@ -205,15 +203,13 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
         logger.error(f"Key file not found: {key_path}")
         return False
 
-    base_urls = [base_url]
-    if ":8043" in base_url:
-        base_urls.append(base_url.replace(":8043", ":443"))
-        base_urls.append(base_url.replace(":8043", ""))
-    elif ":443" in base_url:
-        base_urls.append(base_url.replace(":443", ":8043"))
+    base_urls = []
+    if ":443" in base_url:
+        base_urls = [base_url, base_url.replace(":443", ":8043")]
+    elif ":8043" in base_url:
+        base_urls = [base_url.replace(":8043", ":443"), base_url, base_url.replace(":8043", "")]
     else:
-        base_urls.append(f"{base_url}:443")
-        base_urls.append(f"{base_url}:8043")
+        base_urls = [f"{base_url}:443", f"{base_url}:8043", base_url]
 
     with open(cert_path, "rb") as cf:
         cert_bytes = cf.read()
@@ -247,7 +243,7 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
         # 1. First check official TP-Link OpenAPI endpoint: /openapi/v1/{omadacId}/system/setting/certificate
         existing_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
         if existing_cert is not None:
-            logger.info(f"Current Omada certificate status: {existing_cert}")
+            logger.info(f"Current Omada certificate status before upload: {existing_cert}")
 
         openapi_endpoints = []
         for b_url in base_urls:
@@ -279,9 +275,13 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
                                 res_json = res.json()
                                 if res_json.get("errorCode") == 0:
                                     logger.info(f"SSL Certificate '{fname}' successfully installed on Omada Controller via OpenAPI!")
+                                    time.sleep(1)
+                                    updated_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
+                                    if updated_cert is not None:
+                                        logger.info(f"Updated Omada certificate status after upload: {updated_cert}")
                                     return True
                                 else:
-                                    logger.warning(f"Omada OpenAPI response at {url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+                                    logger.debug(f"Omada OpenAPI response at {url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
                             except Exception:
                                 logger.debug(f"Received non-JSON response from {url}: {res.text[:100]}")
                         else:
