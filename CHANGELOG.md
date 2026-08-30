@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.6] - 2026-08-30
+
+### Added
+- Formatted timestamped logging (`YYYY-MM-DD HH:MM:SS [LEVEL]`) across all shell script outputs to match the Python script log format.
+- Clear and structured START and STOP visual banners for the service startup, shutdown, and renewal cycles.
+- Signal trapping (`SIGTERM`, `SIGINT`, `SIGHUP`) to ensure a clean STOP banner is printed when the add-on is stopped or restarted.
+
 ## [1.0.5] - 2026-08-30
 
 ### Fixed
