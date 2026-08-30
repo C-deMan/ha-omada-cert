@@ -258,8 +258,6 @@ deploy_certificates() {
         log_info "Checking and synchronizing certificates with Omada Controller..."
         if python3 /deploy_omada.py deploy "$FULLCHAIN_FILE" "$PRIVKEY_FILE" "$CONFIG_PATH"; then
             log_info "Omada certificate check and synchronization completed."
-            touch "/data/pending_omada_reboot"
-            check_and_run_reboot
         else
             log_warn "Omada deployment encountered an error."
         fi
@@ -300,23 +298,33 @@ run_certbot() {
     print_cycle_end
 }
 
-# Initial certificate run on startup
+# Initial certificate run on startup/restart
 run_certbot
 
-# Periodic renewal loop
-RENEW_INTERVAL_SECONDS=$(( RENEW_INTERVAL_HOURS * 3600 ))
-LAST_RENEW_CHECK=$(date +%s)
-log_info "Renewal daemon active. Scheduled checks every $RENEW_INTERVAL_HOURS hours."
+# Scheduled check loop: Runs at configured day and time
+SCHEDULE_DAY=$(jq --raw-output '.reboot_schedule_day // .schedule_day // "any"' "$CONFIG_PATH" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+SCHEDULE_TIME=$(jq --raw-output '.reboot_schedule_time // .schedule_time // "03:00"' "$CONFIG_PATH" 2>/dev/null)
+
+log_info "Scheduled checks active. Scheduled maintenance window: $(echo "$SCHEDULE_DAY" | awk '{print toupper(substr($0,1,1))substr($0,2)}') at ${SCHEDULE_TIME}."
+
+LAST_SCHEDULED_RUN=""
 
 while true; do
-    sleep 60
-    check_and_run_reboot
+    sleep 25
+    CURRENT_DAY=$(date "+%A" | tr '[:upper:]' '[:lower:]')
+    CURRENT_TIME=$(date "+%H:%M")
+    CURRENT_SLOT="$(date '+%Y-%m-%d')_${CURRENT_TIME}"
 
-    NOW=$(date +%s)
-    ELAPSED=$(( NOW - LAST_RENEW_CHECK ))
-    if [ "$ELAPSED" -ge "$RENEW_INTERVAL_SECONDS" ]; then
-        log_info "Running scheduled certificate renewal check..."
+    # Match day ("any" or specific day like "sunday")
+    DAY_MATCH=false
+    if [ "$SCHEDULE_DAY" = "any" ] || [ "$SCHEDULE_DAY" = "$CURRENT_DAY" ]; then
+        DAY_MATCH=true
+    fi
+
+    # Check if we hit the scheduled time and haven't run during this minute slot
+    if [ "$DAY_MATCH" = "true" ] && [ "$CURRENT_TIME" = "$SCHEDULE_TIME" ] && [ "$LAST_SCHEDULED_RUN" != "$CURRENT_SLOT" ]; then
+        LAST_SCHEDULED_RUN="$CURRENT_SLOT"
+        log_info "Scheduled check time reached ($CURRENT_DAY $CURRENT_TIME). Running certificate check and maintenance cycle..."
         run_certbot
-        LAST_RENEW_CHECK=$(date +%s)
     fi
 done

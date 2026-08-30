@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2] - 2026-08-31
+
+### Fixed
+- **Automatic Controller Reboot on Update**: Added automatic reboot trigger immediately upon successful certificate upload if `reboot_controller_on_update` is enabled.
+- **Scheduled Check & Maintenance Window**: Certificate renewal check and maintenance cycle now execute:
+  1. Whenever the add-on is started or restarted.
+  2. At the user-configured maintenance window (e.g. `schedule_day: any` at `schedule_time: 03:00`), ensuring all checks, renewals, and reboots occur strictly within the scheduled maintenance slot.
+
 ## [1.2.1] - 2026-08-31
 
 ### Fixed

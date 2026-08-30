@@ -459,6 +459,12 @@ def execute_deployment(cert_path, key_path, options_file, mode="deploy"):
     uploaded = upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes, key_bytes, combined_pem_bytes)
     if uploaded:
         logger.info("Omada SSL certificate and key uploaded successfully via OpenAPI.")
+        reboot_on_update = options.get("reboot_controller_on_update", True)
+        if reboot_on_update:
+            logger.info("Reboot on update is enabled. Initiating reboot on Omada Controller to apply certificate...")
+            reboot_omada_controller(session, base_urls, token, omadac_id)
+        else:
+            logger.info("Reboot on update is disabled. Please restart Omada Controller manually for the certificate to take effect.")
         return True
 
     logger.error("Failed to upload SSL certificate to Omada Controller via OpenAPI.")
