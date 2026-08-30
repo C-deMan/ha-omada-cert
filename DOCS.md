@@ -32,11 +32,13 @@ letsencrypt_staging: false
 renew_interval_hours: 12
 copy_to_ha_ssl: true
 ssl_subdir: omada
+timezone: ""
+reboot_controller_on_update: true
+reboot_schedule_day: "any"
+reboot_schedule_time: "03:00"
 omada:
   enabled: true
   url: "https://192.168.1.1:8043"
-  username: "your_omada_admin_username"
-  password: "your_omada_admin_password"
   client_id: "YOUR_OMADA_CLIENT_ID"
   client_secret: "YOUR_OMADA_CLIENT_SECRET"
   omadac_id: ""
@@ -55,12 +57,13 @@ omada:
 | `copy_to_ha_ssl` | boolean | No | Copies the certificate files to `/ssl/` on Home Assistant (default: `true`). |
 | `ssl_subdir` | string | No | Subdirectory inside `/ssl/` to store the certificates to prevent overwriting Home Assistant's default certificates (default: `omada`). |
 | `timezone` | string | No | Custom timezone (e.g., `Europe/Amsterdam`). If left blank, automatically detected from Home Assistant. |
+| `reboot_controller_on_update` | boolean | No | Automatically reboot the Omada Controller when a new certificate is installed (default: `true`). |
+| `reboot_schedule_day` | string | No | Maintenance day for controller reboot (`any`, `monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`). Default: `any`. |
+| `reboot_schedule_time` | string | No | Maintenance time in 24h format (e.g. `03:00` or `immediate`). Default: `03:00`. |
 | `omada.enabled` | boolean | **Yes** | Set to `true` to push certificates to Omada Controller automatically. |
 | `omada.url` | string | Conditional | URL of your Omada Controller (e.g. `https://192.168.1.1:8043`). |
-| `omada.username` | string | **Required for SSL upload** | Administrator username for the Omada Web Management interface. |
-| `omada.password` | string | **Required for SSL upload** | Administrator password for the Omada Web Management interface. |
-| `omada.client_id` | string | Optional | Omada OpenAPI Application Client ID (App ID). |
-| `omada.client_secret` | string | Optional | Omada OpenAPI Application Client Secret. |
+| `omada.client_id` | string | **Yes** | Omada OpenAPI Application Client ID (App ID). |
+| `omada.client_secret` | string | **Yes** | Omada OpenAPI Application Client Secret. |
 | `omada.omadac_id` | string | No | Controller ID (auto-detected if omitted). |
 | `omada.verify_ssl` | boolean | No | Set to `false` if your Omada controller currently uses a self-signed cert (default: `false`). |
 

@@ -10,9 +10,11 @@ A Home Assistant Supervisor Add-on to automatically generate, renew, and deploy 
 ## Highlights
 
 - **DNS-01 Challenge**: No open ports (80/443) or port forwarding needed. Supports wildcard certificates (`*.yourdomain.com`).
-- **Omada Controller Integration**: Pushes renewed certificates to your TP-Link Omada Controller via its API without manual intervention.
-- **Home Assistant `/ssl` Support**: Copies the certificates to Home Assistant's shared `/ssl` folder for use by HA Core or other add-ons.
-- **Automated Renewal**: Runs continuously in the background, checking and renewing certificates before expiration.
+- **Official Omada OpenAPI Integration**: Uploads certificates directly to your TP-Link Omada Controller (OC200, OC300, or Software Controller) using secure Application Client credentials (Client ID & Client Secret).
+- **Interactive Ingress Web Dashboard**: Live web UI within Home Assistant with manual **Check & Sync Certificate**, **Reboot Omada Controller**, and **Clear Log File** actions.
+- **Maintenance Reboot Scheduling**: Automatically reboot the controller at your chosen maintenance window (day/time) after certificate renewal to activate new HTTPS certificates.
+- **Home Assistant `/ssl` Export**: Copies the certificates to Home Assistant's `/ssl/omada` folder for HA Core or other add-ons.
+- **Automated Background Renewal**: Continuous renewal daemon keeping certificates valid without user intervention.
 
 ---
 
@@ -42,11 +44,12 @@ letsencrypt_staging: false
 renew_interval_hours: 12
 copy_to_ha_ssl: true
 ssl_subdir: "omada"
+reboot_controller_on_update: true
+reboot_schedule_day: "any"
+reboot_schedule_time: "03:00"
 omada:
   enabled: true
   url: "https://192.168.1.1:8043"
-  username: "your_omada_admin_username"
-  password: "your_omada_admin_password"
   client_id: "your_omada_client_id"
   client_secret: "your_omada_client_secret"
   omadac_id: ""

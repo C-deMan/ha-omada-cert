@@ -34,6 +34,6 @@ COPY rootfs /
 
 WORKDIR /
 
-RUN chmod a+x /run.sh /deploy_omada.py
+RUN chmod a+x /run.sh /deploy_omada.py /web_server.py
 
 CMD [ "/run.sh" ]

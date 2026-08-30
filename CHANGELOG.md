@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0] - 2026-08-31
+
+### Added
+- **Home Assistant Ingress Web Dashboard**: Added an interactive web UI panel to Home Assistant with real-time status of Let's Encrypt and Omada Controller certificates.
+- **Interactive Action Buttons**:
+  - **Check & Sync Certificate Now**: Triggers on-demand certificate verification and deployment.
+  - **Reboot Omada Controller Now**: Sends an immediate reboot command via OpenAPI to apply newly imported certificates.
+  - **Clear Log File**: Clears add-on activity logs with one click.
+- **Omada Maintenance Window & Reboot Scheduling**:
+  - Automatically schedules controller reboots after certificate renewal to apply changes without disrupting daytime network traffic.
+  - Configurable `reboot_schedule_day` (e.g., `any`, `sunday`) and `reboot_schedule_time` (e.g., `03:00` or `immediate`).
+- **Cleaned up Authentication**: Removed legacy username/password authentication options across all scripts and configuration schemas, streamlining to secure OpenAPI Application Client credentials (`client_id` and `client_secret`).
+
 ## [1.1.8] - 2026-08-31
 
 ### Added

@@ -105,10 +105,26 @@ print_banner_stop() {
     echo ""
 }
 
-# Trap termination signals to show clean stop banner
-trap 'print_banner_stop; exit 0' SIGTERM SIGINT SIGHUP
+# Trap termination signals to show clean stop banner and stop background servers
+cleanup() {
+    if [ -n "$WEB_SERVER_PID" ] && kill -0 "$WEB_SERVER_PID" 2>/dev/null; then
+        kill "$WEB_SERVER_PID" 2>/dev/null || true
+    fi
+    print_banner_stop
+    exit 0
+}
+trap cleanup SIGTERM SIGINT SIGHUP
 
 print_banner_start
+
+# Tee output to persistent log file in /data
+mkdir -p /data/letsencrypt /data/letsencrypt-work /data/letsencrypt-log /ssl
+touch /data/addon.log
+
+# Start Ingress Web Server in background
+log_info "Starting Ingress Web Dashboard on port 8099..."
+python3 /web_server.py &
+WEB_SERVER_PID=$!
 
 if [ ! -f "$CONFIG_PATH" ]; then
     log_error "Configuration file $CONFIG_PATH not found!"
@@ -161,6 +177,53 @@ CF_CREDS_FILE="/data/letsencrypt/cloudflare.ini"
 echo "dns_cloudflare_api_token = $CLOUDFLARE_API_TOKEN" > "$CF_CREDS_FILE"
 chmod 600 "$CF_CREDS_FILE"
 
+check_and_run_reboot() {
+    if [ ! -f "/data/pending_omada_reboot" ]; then
+        return 0
+    fi
+
+    local reboot_on_update
+    local reboot_day
+    local reboot_time
+    reboot_on_update=$(jq --raw-output '.reboot_controller_on_update // true' "$CONFIG_PATH" 2>/dev/null || echo "true")
+    reboot_day=$(jq --raw-output '.reboot_schedule_day // "any"' "$CONFIG_PATH" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    reboot_time=$(jq --raw-output '.reboot_schedule_time // "03:00"' "$CONFIG_PATH" 2>/dev/null)
+
+    if [ "$reboot_on_update" != "true" ]; then
+        return 0
+    fi
+
+    # Check if time is "immediate"
+    if [ "$reboot_time" = "immediate" ] || [ "$reboot_day" = "immediate" ]; then
+        log_info "Immediate Omada Controller reboot requested..."
+        if python3 /deploy_omada.py reboot "" "" "$CONFIG_PATH"; then
+            rm -f "/data/pending_omada_reboot"
+            log_info "Omada Controller reboot triggered successfully."
+        fi
+        return 0
+    fi
+
+    local current_day
+    local current_time
+    current_day=$(date "+%A" | tr '[:upper:]' '[:lower:]')
+    current_time=$(date "+%H:%M")
+
+    # Match day ("any" or specific day like "sunday")
+    local day_match=false
+    if [ "$reboot_day" = "any" ] || [ "$reboot_day" = "$current_day" ]; then
+        day_match=true
+    fi
+
+    # Match time (e.g. "03:00")
+    if [ "$day_match" = "true" ] && [ "$current_time" = "$reboot_time" ]; then
+        log_info "Scheduled maintenance window reached ($current_day $current_time). Rebooting Omada Controller to activate certificate..."
+        if python3 /deploy_omada.py reboot "" "" "$CONFIG_PATH"; then
+            rm -f "/data/pending_omada_reboot"
+            log_info "Omada Controller reboot triggered successfully."
+        fi
+    fi
+}
+
 deploy_certificates() {
     CERT_DIR="/data/letsencrypt/live/${PRIMARY_DOMAIN}"
     FULLCHAIN_FILE="${CERT_DIR}/fullchain.pem"
@@ -169,14 +232,6 @@ deploy_certificates() {
     if [ ! -f "$FULLCHAIN_FILE" ] || [ ! -f "$PRIVKEY_FILE" ]; then
         log_error "Certificates not found at $CERT_DIR"
         return 1
-    fi
-
-    # Check if certificate files actually changed before triggering redeployments
-    local cert_hash
-    cert_hash=$(md5sum "$FULLCHAIN_FILE" 2>/dev/null | awk '{print $1}')
-    local last_cert_hash=""
-    if [ -f "/data/last_deployed_cert_hash" ]; then
-        last_cert_hash=$(cat "/data/last_deployed_cert_hash")
     fi
 
     # 1. Copy to Home Assistant /ssl directory (under a subdirectory to prevent overwriting default HA certs)
@@ -201,8 +256,10 @@ deploy_certificates() {
     # 2. Deploy to Omada Controller if enabled
     if [ "$OMADA_ENABLED" = "true" ]; then
         log_info "Checking and synchronizing certificates with Omada Controller..."
-        if python3 /deploy_omada.py "$FULLCHAIN_FILE" "$PRIVKEY_FILE" "$CONFIG_PATH"; then
+        if python3 /deploy_omada.py deploy "$FULLCHAIN_FILE" "$PRIVKEY_FILE" "$CONFIG_PATH"; then
             log_info "Omada certificate check and synchronization completed."
+            touch "/data/pending_omada_reboot"
+            check_and_run_reboot
         else
             log_warn "Omada deployment encountered an error."
         fi
@@ -247,12 +304,19 @@ run_certbot() {
 run_certbot
 
 # Periodic renewal loop
-SLEEP_SECONDS=$(( RENEW_INTERVAL_HOURS * 3600 ))
+RENEW_INTERVAL_SECONDS=$(( RENEW_INTERVAL_HOURS * 3600 ))
+LAST_RENEW_CHECK=$(date +%s)
 log_info "Renewal daemon active. Scheduled checks every $RENEW_INTERVAL_HOURS hours."
 
 while true; do
-    log_info "Sleeping for $RENEW_INTERVAL_HOURS hours ($SLEEP_SECONDS seconds)..."
-    sleep "$SLEEP_SECONDS"
-    log_info "Running scheduled certificate renewal check..."
-    run_certbot
+    sleep 60
+    check_and_run_reboot
+
+    NOW=$(date +%s)
+    ELAPSED=$(( NOW - LAST_RENEW_CHECK ))
+    if [ "$ELAPSED" -ge "$RENEW_INTERVAL_SECONDS" ]; then
+        log_info "Running scheduled certificate renewal check..."
+        run_certbot
+        LAST_RENEW_CHECK=$(date +%s)
+    fi
 done
