@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.1] - 2026-08-31
+
+### Fixed
+- Added `--cert-name "$PRIMARY_DOMAIN"` to Certbot arguments, allowing seamless non-interactive migration from previous ECDSA keys to 2048-bit RSA keys without prompt errors.
+
 ## [1.3.0] - 2026-08-31
 
 ### Added

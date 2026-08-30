@@ -235,6 +235,7 @@ run_certbot() {
         "--non-interactive"
         "--agree-tos"
         "--email" "$LETSENCRYPT_EMAIL"
+        "--cert-name" "$PRIMARY_DOMAIN"
         "--key-type" "rsa"
         "--rsa-key-size" "2048"
         "--keep-until-expiring"
