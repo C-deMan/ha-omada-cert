@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.1] - 2026-08-31
+
+### Fixed
+- Fixed `json.decoder.JSONDecodeError` during `deploy_omada.py` invocation by removing accidental code duplication and adding safe fallback checking when reading `options.json`.
+
 ## [1.2.0] - 2026-08-31
 
 ### Added
