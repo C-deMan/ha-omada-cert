@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.9] - 2026-08-30
+
+### Fixed
+- Fixed Omada OpenAPI authentication error handling and broadened endpoint matrix to cover both standalone and global controller setups.
+- Added graceful fallback to username/password authentication if OpenAPI is not enabled in controller settings.
+- Cleaned up noisy repetitive warnings during discovery attempts.
+
 ## [1.0.8] - 2026-08-30
 
 ### Fixed

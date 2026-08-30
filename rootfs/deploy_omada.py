@@ -51,32 +51,40 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
     # Body: {"omadacId": "...", "client_id": "...", "client_secret": "..."}
     primary_urls = [
         f"{base_url}/openapi/authorize/token?grant_type=client_credentials",
-        f"{base_url}/openapi/v1/token?grant_type=client_credentials"
+        f"{base_url}/openapi/v1/token?grant_type=client_credentials",
+        f"{base_url}/openapi/authorize/token",
+        f"{base_url}/openapi/v1/token"
     ]
     if omadac_id:
         primary_urls.extend([
             f"{base_url}/openapi/authorize/token?grant_type=client_credentials&omadacId={omadac_id}",
-            f"{base_url}/{omadac_id}/openapi/authorize/token?grant_type=client_credentials"
+            f"{base_url}/openapi/authorize/token?grant_type=client_credentials&omadac_id={omadac_id}",
+            f"{base_url}/{omadac_id}/openapi/authorize/token?grant_type=client_credentials",
+            f"{base_url}/{omadac_id}/openapi/v1/token?grant_type=client_credentials"
         ])
 
     payloads = [
         # Official TP-Link OpenAPI format
         {"omadacId": omadac_id, "client_id": client_id, "client_secret": client_secret},
+        {"omadac_id": omadac_id, "client_id": client_id, "client_secret": client_secret},
         {"omadacId": omadac_id, "appId": client_id, "secret": client_secret},
         {"omadacId": omadac_id, "appKey": client_id, "appSecret": client_secret},
-        {"client_id": client_id, "client_secret": client_secret, "grant_type": "client_credentials"}
+        # Without omadacId inside JSON body (for standalone controllers)
+        {"client_id": client_id, "client_secret": client_secret, "grant_type": "client_credentials"},
+        {"client_id": client_id, "client_secret": client_secret},
+        {"appId": client_id, "secret": client_secret}
     ]
 
     for url in primary_urls:
         for payload in payloads:
             current_payload = {k: v for k, v in payload.items() if v is not None}
             try:
-                logger.info(f"Attempting OpenAPI token request at {url}...")
                 res = session.post(url, json=current_payload, timeout=15)
                 
                 try:
                     data = res.json()
                 except Exception:
+                    logger.debug(f"Non-JSON response from {url} (HTTP {res.status_code}): {res.text[:100]}")
                     continue
 
                 if data.get("errorCode") == 0:
@@ -88,14 +96,14 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
                     )
                     active_omadac_id = result.get("omadacId") or omadac_id
                     if token:
-                        logger.info(f"Successfully obtained OpenAPI access token from Omada Controller!")
+                        logger.info(f"Successfully obtained OpenAPI access token from Omada Controller via {url}!")
                         return token, active_omadac_id, "openapi"
                 else:
                     msg = data.get("msg") or data.get("message")
                     code = data.get("errorCode")
-                    logger.warning(f"OpenAPI attempt at {url} returned error code {code}: {msg}")
+                    logger.debug(f"OpenAPI attempt at {url} returned error code {code}: {msg}")
             except Exception as exc:
-                logger.warning(f"OpenAPI connection error at {url}: {exc}")
+                logger.debug(f"OpenAPI connection error at {url}: {exc}")
 
     return None, omadac_id, None
 
