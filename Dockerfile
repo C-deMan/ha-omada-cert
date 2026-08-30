@@ -28,7 +28,8 @@ RUN \
         urllib3 \
     && apk del gcc musl-dev python3-dev libffi-dev openssl-dev
 
-# Copy application scripts
+# Copy application scripts and add-on configuration
+COPY config.yaml /etc/addon_config.yaml
 COPY rootfs /
 
 WORKDIR /

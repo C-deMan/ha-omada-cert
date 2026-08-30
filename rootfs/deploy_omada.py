@@ -127,10 +127,22 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
 def authenticate_user_pass(session, base_url, username, password, omadac_id=None):
     """Authenticate with Omada Controller using username & password."""
     logger.info("Authenticating with Omada Controller via username/password...")
+
+    base_urls = [base_url]
+    if ":8043" in base_url:
+        base_urls.append(base_url.replace(":8043", ":443"))
+        base_urls.append(base_url.replace(":8043", ""))
+    elif ":443" in base_url:
+        base_urls.append(base_url.replace(":443", ":8043"))
+    else:
+        base_urls.append(f"{base_url}:8043")
+        base_urls.append(f"{base_url}:443")
+
     login_urls = []
-    if omadac_id:
-        login_urls.append(f"{base_url}/{omadac_id}/api/v2/login")
-    login_urls.append(f"{base_url}/api/v2/login")
+    for b_url in base_urls:
+        if omadac_id:
+            login_urls.append(f"{b_url}/{omadac_id}/api/v2/login")
+        login_urls.append(f"{b_url}/api/v2/login")
 
     payload = {
         "username": username,
@@ -202,16 +214,30 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
     candidate_upload_urls = []
     for b_url in base_urls:
         if omadac_id:
-            # TP-Link OpenAPI documented pattern: /{omadacId}/openapi/v1/... or /openapi/v1/{omadacId}/...
-            candidate_upload_urls.append(f"{b_url}/openapi/v1/{omadac_id}/maintenance/ssl")
-            candidate_upload_urls.append(f"{b_url}/{omadac_id}/openapi/v1/maintenance/ssl")
-            candidate_upload_urls.append(f"{b_url}/openapi/v1/{omadac_id}/system/ssl")
-            candidate_upload_urls.append(f"{b_url}/{omadac_id}/openapi/v1/system/ssl")
-            candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/maintenance/ssl")
-            candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/system/ssl")
-        candidate_upload_urls.append(f"{b_url}/openapi/v1/maintenance/ssl")
-        candidate_upload_urls.append(f"{b_url}/openapi/v1/system/ssl")
-        candidate_upload_urls.append(f"{b_url}/api/v2/maintenance/ssl")
+            if auth_type == "session":
+                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/maintenance/ssl")
+                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/system/ssl")
+                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/maintenance/customcert")
+                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/ssl/customcert")
+                candidate_upload_urls.append(f"{b_url}/api/v2/maintenance/ssl")
+                candidate_upload_urls.append(f"{b_url}/api/v2/system/ssl")
+            else:
+                candidate_upload_urls.append(f"{b_url}/openapi/v1/{omadac_id}/maintenance/ssl")
+                candidate_upload_urls.append(f"{b_url}/{omadac_id}/openapi/v1/maintenance/ssl")
+                candidate_upload_urls.append(f"{b_url}/openapi/v1/{omadac_id}/system/ssl")
+                candidate_upload_urls.append(f"{b_url}/{omadac_id}/openapi/v1/system/ssl")
+                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/maintenance/ssl")
+                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/system/ssl")
+        else:
+            if auth_type == "session":
+                candidate_upload_urls.append(f"{b_url}/api/v2/maintenance/ssl")
+                candidate_upload_urls.append(f"{b_url}/api/v2/system/ssl")
+                candidate_upload_urls.append(f"{b_url}/api/v2/maintenance/customcert")
+                candidate_upload_urls.append(f"{b_url}/api/v2/ssl/customcert")
+            else:
+                candidate_upload_urls.append(f"{b_url}/openapi/v1/maintenance/ssl")
+                candidate_upload_urls.append(f"{b_url}/openapi/v1/system/ssl")
+                candidate_upload_urls.append(f"{b_url}/api/v2/maintenance/ssl")
 
     # De-duplicate while preserving order
     seen_urls = set()
@@ -343,18 +369,23 @@ def main():
         logger.error("Failed to authenticate with Omada Controller.")
         sys.exit(1)
 
-    success = upload_ssl_certificate(session, url, token, omadac_id, auth_type, cert_path, key_path)
-
-    # If OpenAPI upload was unsupported (-1600 or failed) and user/pass credentials are provided, try Web API session fallback
-    if not success and auth_type == "openapi" and has_userpass:
-        logger.info("OpenAPI SSL certificate endpoint is unsupported or restricted by this Controller version.")
-        logger.info("Falling back to Omada Web API session login (username & password) to install certificate...")
-        session_web = requests.Session()
-        session_web.verify = verify_ssl
-        web_token, web_omadac_id, web_auth_type = authenticate_user_pass(session_web, url, username, password, omadac_id)
-        if web_token:
-            success = upload_ssl_certificate(session_web, url, web_token, web_omadac_id, web_auth_type, cert_path, key_path)
-            logout_omada(session_web, url, web_token, web_omadac_id, web_auth_type)
+    success = False
+    if auth_type == "openapi":
+        success = upload_ssl_certificate(session, url, token, omadac_id, auth_type, cert_path, key_path)
+        if not success:
+            logger.warning("Omada OpenAPI does not support SSL certificate uploads (TP-Link OpenAPI restricts controller SSL management to the Web UI).")
+            if has_userpass:
+                logger.info("Falling back to Omada Web Management API (username & password) to install certificate...")
+                session_web = requests.Session()
+                session_web.verify = verify_ssl
+                web_token, web_omadac_id, web_auth_type = authenticate_user_pass(session_web, url, username, password, omadac_id)
+                if web_token:
+                    success = upload_ssl_certificate(session_web, url, web_token, web_omadac_id, web_auth_type, cert_path, key_path)
+                    logout_omada(session_web, url, web_token, web_omadac_id, web_auth_type)
+            else:
+                logger.error("Omada requires administrator 'username' and 'password' in the add-on configuration to install SSL certificates via the Web API.")
+    else:
+        success = upload_ssl_certificate(session, url, token, omadac_id, auth_type, cert_path, key_path)
 
     logout_omada(session, url, token, omadac_id, auth_type)
 

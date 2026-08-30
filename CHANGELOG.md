@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.3] - 2026-08-30
+
+### Added
+- **Version Display in Banners**: Included add-on version (`vX.Y.Z`) in the start, stop, and renewal cycle log banners.
+- Added `/etc/addon_config.yaml` to container image for reliable local version inspection.
+
+### Fixed
+- **Explicit Web API Credentials Notice**: Added clear error logging explaining that Omada SDN OpenAPI does not support controller SSL certificate uploads (Error `-1600 Unsupported request path`), and that configuring the Omada administrator `username` and `password` is required to deploy certificates via the Web Management API.
+- Expanded candidate Web API upload endpoints (`/api/v2/maintenance/customcert`, `/api/v2/ssl/customcert`, etc.) and multi-port support.
+
 ## [1.1.2] - 2026-08-30
 
 ### Added

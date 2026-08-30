@@ -36,6 +36,25 @@ setup_timezone() {
 
 setup_timezone
 
+# Detect Add-on Version
+get_addon_version() {
+    local ver=""
+    if [ -f "/etc/addon_config.yaml" ]; then
+        ver=$(grep "^version:" /etc/addon_config.yaml 2>/dev/null | awk -F'"' '{print $2}' || true)
+    fi
+    if [ -z "$ver" ] && [ -n "$SUPERVISOR_TOKEN" ]; then
+        ver=$(curl -s -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+            -H "Content-Type: application/json" \
+            http://supervisor/addons/self/info 2>/dev/null | jq --raw-output '.data.version // empty' 2>/dev/null || true)
+    fi
+    if [ -z "$ver" ]; then
+        ver="1.1.3"
+    fi
+    echo "$ver"
+}
+
+ADDON_VERSION=$(get_addon_version)
+
 log() {
     local level="$1"
     shift
@@ -53,7 +72,7 @@ print_banner_start() {
     timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     echo ""
     echo "================================================================================"
-    echo " [${timestamp}] >>> START: OMADA & CLOUDFLARE SSL CERTIFICATE MANAGER <<<"
+    echo " [${timestamp}] >>> START: OMADA & CLOUDFLARE SSL CERTIFICATE MANAGER v${ADDON_VERSION} <<<"
     echo "================================================================================"
     echo ""
 }
@@ -63,7 +82,7 @@ print_cycle_start() {
     timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     echo ""
     echo "--------------------------------------------------------------------------------"
-    echo " [${timestamp}] >>> STARTING CERTIFICATE ISSUANCE / RENEWAL CYCLE <<<"
+    echo " [${timestamp}] >>> STARTING CERTIFICATE ISSUANCE / RENEWAL CYCLE (v${ADDON_VERSION}) <<<"
     echo "--------------------------------------------------------------------------------"
 }
 
@@ -71,7 +90,7 @@ print_cycle_end() {
     local timestamp
     timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     echo "--------------------------------------------------------------------------------"
-    echo " [${timestamp}] >>> FINISHED CERTIFICATE ISSUANCE / RENEWAL CYCLE <<<"
+    echo " [${timestamp}] >>> FINISHED CERTIFICATE ISSUANCE / RENEWAL CYCLE (v${ADDON_VERSION}) <<<"
     echo "--------------------------------------------------------------------------------"
     echo ""
 }
@@ -81,7 +100,7 @@ print_banner_stop() {
     timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     echo ""
     echo "================================================================================"
-    echo " [${timestamp}] >>> STOP: OMADA & CLOUDFLARE SSL CERTIFICATE MANAGER <<<"
+    echo " [${timestamp}] >>> STOP: OMADA & CLOUDFLARE SSL CERTIFICATE MANAGER v${ADDON_VERSION} <<<"
     echo "================================================================================"
     echo ""
 }
