@@ -100,20 +100,31 @@ for i in $(seq 0 $((DOMAINS_COUNT - 1))); do
     log_info "Registered domain: $DOMAIN"
 done
 
-# Prepare Cloudflare credentials
+# Prepare persistent storage in /data (survives container restarts)
+mkdir -p /data/letsencrypt /data/letsencrypt-work /data/letsencrypt-log /ssl
 mkdir -p /etc/letsencrypt
-CF_CREDS_FILE="/etc/letsencrypt/cloudflare.ini"
+
+# Bind/symlink or point certbot to persistent /data directories so certs and account are kept
+CF_CREDS_FILE="/data/letsencrypt/cloudflare.ini"
 echo "dns_cloudflare_api_token = $CLOUDFLARE_API_TOKEN" > "$CF_CREDS_FILE"
 chmod 600 "$CF_CREDS_FILE"
 
 deploy_certificates() {
-    CERT_DIR="/etc/letsencrypt/live/${PRIMARY_DOMAIN}"
+    CERT_DIR="/data/letsencrypt/live/${PRIMARY_DOMAIN}"
     FULLCHAIN_FILE="${CERT_DIR}/fullchain.pem"
     PRIVKEY_FILE="${CERT_DIR}/privkey.pem"
 
     if [ ! -f "$FULLCHAIN_FILE" ] || [ ! -f "$PRIVKEY_FILE" ]; then
         log_error "Certificates not found at $CERT_DIR"
         return 1
+    fi
+
+    # Check if certificate files actually changed before triggering redeployments
+    local cert_hash
+    cert_hash=$(md5sum "$FULLCHAIN_FILE" 2>/dev/null | awk '{print $1}')
+    local last_cert_hash=""
+    if [ -f "/data/last_deployed_cert_hash" ]; then
+        last_cert_hash=$(cat "/data/last_deployed_cert_hash")
     fi
 
     # 1. Copy to Home Assistant /ssl directory (under a subdirectory to prevent overwriting default HA certs)
@@ -137,19 +148,29 @@ deploy_certificates() {
 
     # 2. Deploy to Omada Controller if enabled
     if [ "$OMADA_ENABLED" = "true" ]; then
-        log_info "Deploying certificates to Omada Controller..."
-        python3 /deploy_omada.py "$FULLCHAIN_FILE" "$PRIVKEY_FILE" "$CONFIG_PATH" || {
-            log_warn "Omada deployment encountered an error."
-        }
+        if [ "$cert_hash" = "$last_cert_hash" ]; then
+            log_info "Certificate has not changed since last successful deployment. Skipping Omada upload."
+        else
+            log_info "Deploying new/renewed certificates to Omada Controller..."
+            if python3 /deploy_omada.py "$FULLCHAIN_FILE" "$PRIVKEY_FILE" "$CONFIG_PATH"; then
+                echo "$cert_hash" > "/data/last_deployed_cert_hash"
+                log_info "Omada certificate deployment successful."
+            else
+                log_warn "Omada deployment encountered an error."
+            fi
+        fi
     fi
 }
 
 run_certbot() {
     print_cycle_start
-    log_info "Requesting/Renewing certificates with Certbot..."
+    log_info "Checking / Renewing certificates with Certbot..."
 
     CERTBOT_FLAGS=(
         "certonly"
+        "--config-dir" "/data/letsencrypt"
+        "--work-dir" "/data/letsencrypt-work"
+        "--logs-dir" "/data/letsencrypt-log"
         "--dns-cloudflare"
         "--dns-cloudflare-credentials" "$CF_CREDS_FILE"
         "--dns-cloudflare-propagation-seconds" "30"
@@ -169,7 +190,7 @@ run_certbot() {
         log_info "Certbot execution completed successfully."
         deploy_certificates
     else
-        log_error "Certbot encountered an error while requesting certificates."
+        log_error "Certbot encountered an error while requesting/renewing certificates."
     fi
 
     print_cycle_end

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.8] - 2026-08-30
+
+### Fixed
+- **Persistent Certificate Storage**: Moved Certbot configuration, certificates, and work directories to Home Assistant persistent storage (`/data/letsencrypt`, `/data/letsencrypt-work`, `/data/letsencrypt-log`).
+- **Prevent Unnecessary Certificate Requests**: With `--keep-until-expiring`, `--expand`, and persistent `/data`, Certbot now reuses existing certificates and only renews them when within the 30-day expiration window or when domain names change.
+- **Smart Omada Deployment**: Tracks hash of deployed certificate in `/data/last_deployed_cert_hash` to avoid uploading the same certificate repeatedly on restart/scheduled checks.
+
 ## [1.0.7] - 2026-08-30
 
 ### Fixed
