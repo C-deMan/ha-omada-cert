@@ -12,6 +12,10 @@ import time
 import hmac
 import hashlib
 import logging
+import ssl
+import socket
+import subprocess
+from urllib.parse import urlparse
 import urllib3
 import requests
 
@@ -21,6 +25,58 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 logger = logging.getLogger("omada_ssl")
+
+
+def get_cert_details_file(cert_path):
+    """Parse SHA256 fingerprint, subject, and notAfter from a local PEM certificate."""
+    try:
+        proc = subprocess.run(
+            ["openssl", "x509", "-in", cert_path, "-noout", "-fingerprint", "-sha256", "-enddate", "-subject"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
+        )
+        info = {}
+        for line in proc.stdout.strip().split("\n"):
+            if "=" in line:
+                k, v = line.split("=", 1)
+                info[k.strip().lower()] = v.strip()
+        return info
+    except Exception as exc:
+        logger.debug(f"Could not read local certificate details: {exc}")
+        return {}
+
+
+def get_live_tls_cert_details(host, port):
+    """Retrieve SHA256 fingerprint, subject, and notAfter from the server's live TLS connection."""
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with socket.create_connection((host, int(port)), timeout=5) as sock:
+            with ctx.wrap_socket(sock) as ssock:
+                der_cert = ssock.getpeercert(binary_form=True)
+                if not der_cert:
+                    return None
+                pem_cert = ssl.DER_cert_to_PEM_cert(der_cert)
+                proc = subprocess.run(
+                    ["openssl", "x509", "-noout", "-fingerprint", "-sha256", "-enddate", "-subject"],
+                    input=pem_cert,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=True
+                )
+                info = {}
+                for line in proc.stdout.strip().split("\n"):
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        info[k.strip().lower()] = v.strip()
+                return info
+    except Exception as exc:
+        logger.debug(f"Could not connect via TLS to {host}:{port}: {exc}")
+        return None
 
 
 def get_controller_info(session, base_url):
@@ -539,6 +595,40 @@ def main():
     session.verify = verify_ssl
 
     logger.info(f"Connecting to Omada Controller at {url}...")
+
+    parsed_url = urlparse(url)
+    host = parsed_url.hostname or url.replace("https://", "").replace("http://", "").split(":")[0]
+    port = parsed_url.port or (8043 if ":8043" in url else (443 if ":443" in url else 8043))
+
+    local_cert = get_cert_details_file(cert_path)
+    local_fp = local_cert.get("sha256 fingerprint")
+    local_expiry = local_cert.get("notafter")
+    local_subject = local_cert.get("subject")
+
+    logger.info(f"Local Certificate: Subject={local_subject}, Expires={local_expiry}")
+
+    # Inspect live TLS certificate currently served by Omada Controller
+    ports_to_check = [port]
+    for p in [8043, 443]:
+        if p not in ports_to_check:
+            ports_to_check.append(p)
+
+    live_cert = None
+    for p in ports_to_check:
+        live_cert = get_live_tls_cert_details(host, p)
+        if live_cert:
+            logger.info(f"Omada Controller Live TLS Certificate (port {p}): Subject={live_cert.get('subject')}, Expires={live_cert.get('notafter')}")
+            break
+
+    # Build base URLs for OpenAPI
+    base_urls = []
+    if ":443" in url:
+        base_urls = [url, url.replace(":443", ":8043")]
+    elif ":8043" in url:
+        base_urls = [url.replace(":8043", ":443"), url, url.replace(":8043", "")]
+    else:
+        base_urls = [f"{url}:443", f"{url}:8043", url]
+
     discovered_id = get_controller_info(session, url)
     if discovered_id:
         logger.info(f"Discovered Omada Controller ID: {discovered_id}")
@@ -563,6 +653,23 @@ def main():
     if not token:
         logger.error("Failed to authenticate with Omada Controller.")
         sys.exit(1)
+
+    # Check if Omada certificate is already active, valid, and enabled
+    if auth_type == "openapi":
+        existing_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
+        if existing_cert is not None:
+            logger.info(f"Omada Controller Setting Status: {existing_cert}")
+            if live_cert and local_fp and live_cert.get("sha256 fingerprint") == local_fp and existing_cert.get("enable") is True:
+                logger.info("Omada Controller is already active with the valid, matching certificate. No update required.")
+                logout_omada(session, url, token, omadac_id, auth_type)
+                sys.exit(0)
+    else:
+        if live_cert and local_fp and live_cert.get("sha256 fingerprint") == local_fp:
+            logger.info("Omada Controller is already active with the valid, matching certificate. No update required.")
+            logout_omada(session, url, token, omadac_id, auth_type)
+            sys.exit(0)
+
+    logger.info("Omada Controller certificate needs updating (expired, disabled, or does not match). Proceeding with upload...")
 
     success = False
     if auth_type == "openapi":

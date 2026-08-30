@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.8] - 2026-08-31
+
+### Added
+- **Live Omada Certificate Expiration & Match Verification**:
+  - Removed local hash caching check in `run.sh` that previously skipped `deploy_omada.py`.
+  - Added live TLS certificate inspection on the Omada Controller (comparing SHA256 fingerprint, subject, and expiration against the local Let's Encrypt certificate).
+  - Inspects Omada controller certificate status (`enable: True`/`False`) via OpenAPI.
+  - Automatically detects if the certificate served by Omada is expired, disabled, or self-signed, and initiates upload accordingly.
+
 ## [1.1.7] - 2026-08-31
 
 ### Added

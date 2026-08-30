@@ -200,16 +200,11 @@ deploy_certificates() {
 
     # 2. Deploy to Omada Controller if enabled
     if [ "$OMADA_ENABLED" = "true" ]; then
-        if [ "$cert_hash" = "$last_cert_hash" ]; then
-            log_info "Certificate has not changed since last successful deployment. Skipping Omada upload."
+        log_info "Checking and synchronizing certificates with Omada Controller..."
+        if python3 /deploy_omada.py "$FULLCHAIN_FILE" "$PRIVKEY_FILE" "$CONFIG_PATH"; then
+            log_info "Omada certificate check and synchronization completed."
         else
-            log_info "Deploying new/renewed certificates to Omada Controller..."
-            if python3 /deploy_omada.py "$FULLCHAIN_FILE" "$PRIVKEY_FILE" "$CONFIG_PATH"; then
-                echo "$cert_hash" > "/data/last_deployed_cert_hash"
-                log_info "Omada certificate deployment successful."
-            else
-                log_warn "Omada deployment encountered an error."
-            fi
+            log_warn "Omada deployment encountered an error."
         fi
     fi
 }
