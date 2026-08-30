@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.5] - 2026-08-31
+
+### Added
+- **Omada Web UI PEM Mode Support**: Implemented exact multipart form payloads matching the Omada Controller Web UI "HTTPS Certificate" import dialog (PEM format with separate `SSL Certificate` and `SSL Key`, without password requirement).
+- Added support for `/api/v2/system/setting/certificate` and `/api/v2/system/setting/ssl` endpoints.
+
 ## [1.1.4] - 2026-08-31
 
 ### Added

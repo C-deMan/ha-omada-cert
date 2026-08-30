@@ -291,25 +291,30 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
 
         logger.warning("Omada OpenAPI certificate endpoints could not complete upload. Checking fallback routes...")
 
-    # Fallback to Web API session endpoints
-    headers_list = [{"Csrf-Token": token}] if auth_type != "openapi" else [
-        {"Authorization": f"AccessToken={token}"},
-        {"Csrf-Token": token}
+    # Web API session endpoints and fallback
+    headers_list = [{"Csrf-Token": token}] if auth_type != "session" else [
+        {"Csrf-Token": token},
+        {"Csrf-Token": token, "Authorization": f"Bearer {token}"}
     ]
 
     candidate_upload_urls = []
     for b_url in base_urls:
         if omadac_id:
             candidate_upload_urls.extend([
+                f"{b_url}/{omadac_id}/api/v2/system/setting/certificate",
+                f"{b_url}/{omadac_id}/api/v2/system/setting/ssl",
                 f"{b_url}/{omadac_id}/api/v2/maintenance/ssl",
                 f"{b_url}/{omadac_id}/api/v2/system/ssl",
                 f"{b_url}/{omadac_id}/api/v2/maintenance/customcert",
                 f"{b_url}/{omadac_id}/api/v2/ssl/customcert",
+                f"{b_url}/api/v2/system/setting/certificate",
                 f"{b_url}/api/v2/maintenance/ssl",
                 f"{b_url}/api/v2/system/ssl"
             ])
         else:
             candidate_upload_urls.extend([
+                f"{b_url}/api/v2/system/setting/certificate",
+                f"{b_url}/api/v2/system/setting/ssl",
                 f"{b_url}/api/v2/maintenance/ssl",
                 f"{b_url}/api/v2/system/ssl",
                 f"{b_url}/api/v2/maintenance/customcert",
@@ -324,33 +329,68 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
             seen_urls.add(u)
             upload_urls.append(u)
 
+    # Form/Multipart variations corresponding to the Web UI PEM Import dialog:
+    # 1) Standard Omada PEM (separate certFile and keyFile with format indicators)
+    # 2) Standard Web UI fields (certificate + key or file + key)
+    multipart_combinations = [
+        # (files_dict, data_dict)
+        (
+            {
+                "certFile": ("cert.pem", cert_bytes, "application/x-pem-file"),
+                "keyFile": ("key.pem", key_bytes, "application/x-pem-file")
+            },
+            {"fileFormat": "PEM", "cerType": "PEM", "type": 1}
+        ),
+        (
+            {
+                "certFile": ("fullchain.pem", cert_bytes, "application/x-pem-file"),
+                "keyFile": ("privkey.pem", key_bytes, "application/x-pem-file")
+            },
+            {"type": 1}
+        ),
+        (
+            {
+                "certificate": ("cert.pem", cert_bytes, "application/x-pem-file"),
+                "key": ("key.pem", key_bytes, "application/x-pem-file")
+            },
+            {"fileFormat": "PEM"}
+        ),
+        (
+            {
+                "file": ("cert.pem", cert_bytes, "application/x-pem-file"),
+                "key": ("key.pem", key_bytes, "application/x-pem-file")
+            },
+            {"cerType": "PEM", "cerName": "cert.pem"}
+        ),
+        (
+            {
+                "file": ("omada_cert.pem", combined_pem_bytes, "application/x-pem-file")
+            },
+            {"cerName": "omada_cert.pem", "cerType": "PEM"}
+        )
+    ]
+
     for url in upload_urls:
         for headers in headers_list:
-            try:
-                logger.info(f"Uploading SSL certificate and key to {url}...")
-                files = {
-                    "certFile": ("fullchain.pem", cert_bytes, "application/x-pem-file"),
-                    "keyFile": ("privkey.pem", key_bytes, "application/x-pem-file")
-                }
-                data = {
-                    "type": 1
-                }
-                res = session.post(url, headers=headers, data=data, files=files, timeout=30)
+            for files, data in multipart_combinations:
+                try:
+                    logger.info(f"Uploading PEM certificate and key to {url}...")
+                    res = session.post(url, headers=headers, data=data, files=files, timeout=30)
 
-                if res.status_code == 200:
-                    try:
-                        res_json = res.json()
-                        if res_json.get("errorCode") == 0:
-                            logger.info("SSL Certificate successfully uploaded and installed on Omada Controller!")
-                            return True
-                        else:
-                            logger.warning(f"Omada response at {url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
-                    except Exception:
-                        logger.debug(f"Received non-JSON response from {url}: {res.text[:100]}")
-                else:
-                    logger.debug(f"HTTP status {res.status_code} during upload to {url}")
-            except Exception as exc:
-                logger.debug(f"Exception during SSL upload to {url}: {exc}")
+                    if res.status_code == 200:
+                        try:
+                            res_json = res.json()
+                            if res_json.get("errorCode") == 0:
+                                logger.info("SSL Certificate successfully uploaded and installed on Omada Controller!")
+                                return True
+                            else:
+                                logger.warning(f"Omada response at {url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+                        except Exception:
+                            logger.debug(f"Received non-JSON response from {url}: {res.text[:100]}")
+                    else:
+                        logger.debug(f"HTTP status {res.status_code} during upload to {url}")
+                except Exception as exc:
+                    logger.debug(f"Exception during SSL upload to {url}: {exc}")
 
     logger.error("Failed to upload SSL certificate to Omada Controller across all available endpoints.")
     return False
