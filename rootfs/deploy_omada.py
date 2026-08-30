@@ -194,6 +194,138 @@ def get_openapi_certificate_info(session, base_urls, token, omadac_id):
     return None
 
 
+def get_openapi_certificate_info(session, base_urls, token, omadac_id):
+    """Retrieve existing certificate info from Omada OpenAPI."""
+    if not omadac_id:
+        return None
+
+    headers = {"Authorization": f"AccessToken={token}"}
+    for b_url in base_urls:
+        urls = [
+            f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate",
+            f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate"
+        ]
+        for url in urls:
+            try:
+                res = session.get(url, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    if data.get("errorCode") == 0:
+                        return data.get("result", {})
+            except Exception as exc:
+                logger.debug(f"Error querying certificate info from {url}: {exc}")
+    return None
+
+
+def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes, key_bytes, combined_pem_bytes, pfx_bytes):
+    """Upload SSL Certificate and Key via official Omada OpenAPI endpoints."""
+    headers_list = [
+        {"Authorization": f"AccessToken={token}"},
+        {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token},
+        {"Authorization": f"Bearer {token}", "accessToken": token}
+    ]
+
+    existing_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
+    if existing_cert is not None:
+        logger.info(f"Current Omada certificate status before upload: {existing_cert}")
+
+    cert_urls = []
+    key_urls = []
+    for b_url in base_urls:
+        if omadac_id:
+            cert_urls.extend([
+                f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate",
+                f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate"
+            ])
+            key_urls.extend([
+                f"{b_url}/openapi/v1/{omadac_id}/system/setting/ssl-key",
+                f"{b_url}/{omadac_id}/openapi/v1/system/setting/ssl-key"
+            ])
+
+    # Method 1: Dual-step upload (Certificate to /certificate AND SSL Key to /ssl-key) for PEM mode
+    cert_uploaded = False
+    key_uploaded = False
+
+    for c_url in cert_urls:
+        for headers in headers_list:
+            try:
+                logger.info(f"Uploading SSL Certificate (fullchain.pem) to {c_url}...")
+                files = {"file": ("fullchain.pem", cert_bytes, "application/x-pem-file")}
+                params = {"cerName": "fullchain.pem"}
+                data = {"cerName": "fullchain.pem"}
+                res = session.post(c_url, headers=headers, params=params, data=data, files=files, timeout=30)
+                if res.status_code == 200:
+                    res_json = res.json()
+                    if res_json.get("errorCode") == 0:
+                        logger.info("SSL Certificate successfully uploaded via OpenAPI!")
+                        cert_uploaded = True
+                        break
+                    else:
+                        logger.debug(f"OpenAPI cert response at {c_url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+            except Exception as exc:
+                logger.debug(f"Exception during OpenAPI cert upload: {exc}")
+        if cert_uploaded:
+            break
+
+    for k_url in key_urls:
+        for headers in headers_list:
+            try:
+                logger.info(f"Uploading SSL Key (privkey.pem) to {k_url}...")
+                files = {"file": ("privkey.pem", key_bytes, "application/x-pem-file")}
+                params = {"keyName": "privkey.pem"}
+                data = {"keyName": "privkey.pem"}
+                res = session.post(k_url, headers=headers, params=params, data=data, files=files, timeout=30)
+                if res.status_code == 200:
+                    res_json = res.json()
+                    if res_json.get("errorCode") == 0:
+                        logger.info("SSL Key successfully uploaded via OpenAPI!")
+                        key_uploaded = True
+                        break
+                    else:
+                        logger.debug(f"OpenAPI key response at {k_url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+            except Exception as exc:
+                logger.debug(f"Exception during OpenAPI key upload: {exc}")
+        if key_uploaded:
+            break
+
+    if cert_uploaded and key_uploaded:
+        time.sleep(1)
+        updated_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
+        if updated_cert is not None:
+            logger.info(f"Updated Omada certificate status after upload: {updated_cert}")
+        return True
+
+    # Method 2: Single bundle upload (.pem combined or .pfx)
+    bundle_variants = [
+        ("omada_cert.pem", combined_pem_bytes, "application/x-pem-file"),
+        ("omada_cert.pfx", pfx_bytes, "application/x-pkcs12")
+    ]
+    for c_url in cert_urls:
+        for fname, fbytes, mtype in bundle_variants:
+            if not fbytes:
+                continue
+            for headers in headers_list:
+                try:
+                    logger.info(f"Uploading certificate bundle ({fname}) to {c_url}...")
+                    files = {"file": (fname, fbytes, mtype)}
+                    params = {"cerName": fname}
+                    data = {"cerName": fname}
+                    res = session.post(c_url, headers=headers, params=params, data=data, files=files, timeout=30)
+                    if res.status_code == 200:
+                        res_json = res.json()
+                        if res_json.get("errorCode") == 0:
+                            logger.info(f"Certificate bundle '{fname}' uploaded via OpenAPI!")
+                            time.sleep(1)
+                            updated_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
+                            if updated_cert is not None:
+                                logger.info(f"Updated Omada certificate status: {updated_cert}")
+                            return True
+                except Exception as exc:
+                    logger.debug(f"Exception during OpenAPI bundle upload: {exc}")
+
+    return False
+
+
 def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_path, key_path):
     """Upload SSL Certificate and Private Key to Omada Controller."""
     if not os.path.exists(cert_path):
@@ -234,61 +366,8 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
         logger.debug(f"Could not generate PKCS12 pfx bundle: {e}")
 
     if auth_type == "openapi":
-        headers_list = [
-            {"Authorization": f"AccessToken={token}"},
-            {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token},
-            {"Authorization": f"Bearer {token}", "accessToken": token}
-        ]
-
-        # 1. First check official TP-Link OpenAPI endpoint: /openapi/v1/{omadacId}/system/setting/certificate
-        existing_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
-        if existing_cert is not None:
-            logger.info(f"Current Omada certificate status before upload: {existing_cert}")
-
-        openapi_endpoints = []
-        for b_url in base_urls:
-            if omadac_id:
-                openapi_endpoints.extend([
-                    f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate",
-                    f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate"
-                ])
-
-        # Try various bundle formats (.pem with fullchain+key, .pfx, or fullchain.pem)
-        file_variants = []
-        if combined_pem_bytes:
-            file_variants.append(("omada_cert.pem", combined_pem_bytes, "application/x-pem-file"))
-        if pfx_bytes:
-            file_variants.append(("omada_cert.pfx", pfx_bytes, "application/x-pkcs12"))
-        file_variants.append(("fullchain.pem", cert_bytes, "application/x-pem-file"))
-
-        for url in openapi_endpoints:
-            for fname, fbytes, mtype in file_variants:
-                for headers in headers_list:
-                    try:
-                        logger.info(f"Uploading certificate ({fname}) to Omada OpenAPI at {url}...")
-                        files = {"file": (fname, fbytes, mtype)}
-                        params = {"cerName": fname}
-                        data = {"cerName": fname}
-                        res = session.post(url, headers=headers, params=params, data=data, files=files, timeout=30)
-                        if res.status_code == 200:
-                            try:
-                                res_json = res.json()
-                                if res_json.get("errorCode") == 0:
-                                    logger.info(f"SSL Certificate '{fname}' successfully installed on Omada Controller via OpenAPI!")
-                                    time.sleep(1)
-                                    updated_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
-                                    if updated_cert is not None:
-                                        logger.info(f"Updated Omada certificate status after upload: {updated_cert}")
-                                    return True
-                                else:
-                                    logger.debug(f"Omada OpenAPI response at {url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
-                            except Exception:
-                                logger.debug(f"Received non-JSON response from {url}: {res.text[:100]}")
-                        else:
-                            logger.debug(f"HTTP status {res.status_code} during OpenAPI upload to {url}")
-                    except Exception as exc:
-                        logger.debug(f"Exception during OpenAPI certificate upload to {url}: {exc}")
-
+        if upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes, key_bytes, combined_pem_bytes, pfx_bytes):
+            return True
         logger.warning("Omada OpenAPI certificate endpoints could not complete upload. Checking fallback routes...")
 
     # Web API session endpoints and fallback

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.7] - 2026-08-31
+
+### Added
+- **Separate SSL Key Upload for OpenAPI PEM Mode**: Added support for `POST /openapi/v1/{omadacId}/system/setting/ssl-key` (`keyName=privkey.pem`) alongside `POST /openapi/v1/{omadacId}/system/setting/certificate` (`cerName=fullchain.pem`). This matches Omada's OpenAPI PEM certificate specification where certificate and private key are uploaded via their dedicated endpoints.
+
 ## [1.1.6] - 2026-08-31
 
 ### Fixed
