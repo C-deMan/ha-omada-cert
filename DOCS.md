@@ -69,9 +69,17 @@ omada:
 4. Set a name (e.g., `Home Assistant Cert Renewal`) and assign administrator permissions.
 5. Copy the generated **Client ID** (App ID) and **Client Secret** into the add-on configuration.
 
-### Obtaining a Cloudflare API Token
+### Creating the Cloudflare API Token
 
-1. Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens).
-2. Click **Create Token** -> use the **Edit zone DNS** template (or create custom with `Zone - DNS - Edit` permissions).
-3. Under **Zone Resources**, select **Include** -> **Specific zone** -> choose your domain.
-4. Copy the generated API Token and paste it into the add-on configuration.
+1. Log in to your [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens) and go to **My Profile** -> **API Tokens**.
+2. Click **Create Token**, then scroll to **Create Custom Token** -> click **Get started**.
+3. **Token name**: Give it a name like `homeassistant omada`.
+4. **Permissions**:
+   - Permission 1: **`Zone`** -> **`DNS`** -> **`Edit`**
+   - Click **`+ Add more`**
+   - Permission 2: **`Zone`** -> **`Zone`** -> **`Read`**
+5. **Zone Resources**:
+   - **`Include`** -> **`Specific zone`** -> select your domain (e.g., `yourdomain.com`), or select **`All zones`**.
+6. **Client IP Address Filtering** and **TTL**: Leave as default (blank).
+7. Click **Continue to summary** -> **Create Token**.
+8. Copy the generated token into the `cloudflare_api_token` field in the add-on configuration.

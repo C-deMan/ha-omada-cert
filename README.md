@@ -57,9 +57,27 @@ Click **Start** and check the **Logs** tab to verify certificate issuance and de
 
 ---
 
+## Creating the Cloudflare API Token
+
+To allow Let's Encrypt / Certbot to complete the DNS-01 challenge (creating the temporary `_acme-challenge` TXT records), create a custom token in Cloudflare:
+
+1. Log in to your [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens) and go to **My Profile** -> **API Tokens**.
+2. Click **Create Token**, then scroll to the bottom and click **Create Custom Token** -> **Get started**.
+3. **Token name**: Choose a descriptive name (e.g. `homeassistant omada`).
+4. **Permissions**:
+   - Add permission 1: **`Zone`** | **`DNS`** | **`Edit`** *(Required to add and remove DNS challenge TXT records)*
+   - Add permission 2 (click *+ Add more*): **`Zone`** | **`Zone`** | **`Read`** *(Recommended to resolve Zone IDs)*
+5. **Zone Resources**:
+   - **`Include`** | **`Specific zone`** | Select your domain (e.g. `yourdomain.com`), or choose **`All zones`**.
+6. **Client IP Address Filtering** & **TTL**: Leave blank (default).
+7. Click **Continue to summary** -> **Create Token**.
+8. Copy the generated token string into the add-on's `cloudflare_api_token` field.
+
+---
+
 ## Documentation
 
-For full configuration reference and details on creating a Cloudflare API Token, see [DOCS.md](DOCS.md).
+For full configuration reference and details on setting up the Omada OpenAPI client, see [DOCS.md](DOCS.md).
 
 ## License
 
