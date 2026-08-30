@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.5] - 2026-08-30
+
+### Fixed
+- Fixed Omada OpenAPI error `-44116` ("Open API Authorized failed, please check whether the input parameters are legal") by adding support for HMAC-SHA256 timestamped signatures, `appKey`/`appSecret` pairings, and GET-based token authorization formats.
+
 ## [1.0.4] - 2026-08-30
 
 ### Added

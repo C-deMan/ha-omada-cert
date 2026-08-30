@@ -8,6 +8,9 @@ Supports Omada Controller v4.x and v5.x.
 import sys
 import os
 import json
+import time
+import hmac
+import hashlib
 import logging
 import urllib3
 import requests
@@ -40,65 +43,92 @@ def get_controller_info(session, base_url):
 
 
 def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=None):
-    """Authenticate with Omada OpenAPI using Client ID (App ID / Client ID) and Client Secret."""
+    """Authenticate with Omada OpenAPI using Client ID (App ID / Client ID) and Client Secret (or signature)."""
     logger.info("Authenticating with Omada Controller via OpenAPI Application Client...")
 
-    endpoints = []
+    timestamp = int(time.time() * 1000)
     
-    # Omada Controller OpenAPI standard payload formats
+    # Generate signature if needed: sign(client_id + timestamp + client_secret)
+    raw_sign_str = f"{client_id}{timestamp}{client_secret}"
+    signature = hmac.new(client_secret.encode("utf-8"), raw_sign_str.encode("utf-8"), hashlib.sha256).hexdigest()
+    md5_sign = hashlib.md5(raw_sign_str.encode("utf-8")).hexdigest()
+
+    # Omada Controller OpenAPI standard payload formats across different controller versions
     payloads = [
+        # Standard Omada OpenAPI v1 payload
+        {"omadacId": omadac_id, "appId": client_id, "secret": client_secret},
+        {"omadacId": omadac_id, "client_id": client_id, "client_secret": client_secret},
+        {"omadacId": omadac_id, "appKey": client_id, "appSecret": client_secret},
+        # Omada signed token request
+        {"omadacId": omadac_id, "appId": client_id, "timestamp": timestamp, "sign": signature},
+        {"omadacId": omadac_id, "appId": client_id, "timestamp": timestamp, "sign": md5_sign},
+        # Without omadacId inside JSON body
         {"appId": client_id, "secret": client_secret},
-        {"app_id": client_id, "secret": client_secret},
-        {"appId": client_id, "appSecret": client_secret},
         {"client_id": client_id, "client_secret": client_secret},
-        {"key": client_id, "secret": client_secret}
+        {"appKey": client_id, "appSecret": client_secret}
     ]
 
-    urls = []
+    urls = [
+        f"{base_url}/openapi/v1/token",
+        f"{base_url}/openapi/authorize/token",
+        f"{base_url}/api/v2/openapi/token"
+    ]
     if omadac_id:
-        urls.extend([
+        urls = [
             f"{base_url}/openapi/v1/token?omadacId={omadac_id}",
             f"{base_url}/{omadac_id}/openapi/v1/token",
             f"{base_url}/openapi/authorize/token?omadacId={omadac_id}",
             f"{base_url}/{omadac_id}/api/v2/openapi/token",
             f"{base_url}/api/v2/openapi/token?omadacId={omadac_id}"
-        ])
-    urls.extend([
-        f"{base_url}/openapi/v1/token",
-        f"{base_url}/openapi/authorize/token",
-        f"{base_url}/api/v2/openapi/token"
-    ])
+        ] + urls
 
     for url in urls:
         for payload in payloads:
-            # Also attach omadacId inside body if present
-            current_payload = dict(payload)
-            if omadac_id and "omadacId" not in url:
-                current_payload["omadacId"] = omadac_id
+            # Clean up None values
+            current_payload = {k: v for k, v in payload.items() if v is not None}
 
             try:
-                logger.info(f"Attempting OpenAPI token request at {url}...")
+                # Also try query params style for GET or POST
                 res = session.post(url, json=current_payload, timeout=15)
                 
                 try:
                     data = res.json()
                 except Exception:
-                    logger.warning(f"Response from {url} is not JSON (status {res.status_code}): {res.text[:200]}")
                     continue
 
                 if data.get("errorCode") == 0:
                     result = data.get("result", {})
-                    token = result.get("accessToken") or result.get("token") or result.get("access_token")
+                    token = (
+                        result.get("accessToken")
+                        or result.get("token")
+                        or result.get("access_token")
+                    )
                     active_omadac_id = result.get("omadacId") or omadac_id
                     if token:
-                        logger.info("Successfully obtained OpenAPI access token from Omada Controller.")
+                        logger.info(f"Successfully obtained OpenAPI access token from Omada Controller using {url}!")
                         return token, active_omadac_id, "openapi"
                 else:
                     msg = data.get("msg") or data.get("message")
                     code = data.get("errorCode")
-                    logger.warning(f"OpenAPI attempt at {url} returned error code {code}: {msg}")
+                    logger.debug(f"OpenAPI attempt at {url} with {list(current_payload.keys())} returned {code}: {msg}")
             except Exception as exc:
-                logger.warning(f"OpenAPI connection error at {url}: {exc}")
+                logger.debug(f"OpenAPI connection error at {url}: {exc}")
+
+    # Also test GET method with params (supported in some Omada versions)
+    for url in [f"{base_url}/openapi/v1/token", f"{base_url}/openapi/authorize/token"]:
+        try:
+            params = {"omadacId": omadac_id, "appId": client_id, "secret": client_secret}
+            res = session.get(url, params={k: v for k, v in params.items() if v is not None}, timeout=15)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("errorCode") == 0:
+                    result = data.get("result", {})
+                    token = result.get("accessToken") or result.get("token")
+                    if token:
+                        logger.info(f"Successfully obtained OpenAPI access token via GET from {url}!")
+                        return token, omadac_id, "openapi"
+        except Exception:
+            pass
 
     return None, omadac_id, None
 
