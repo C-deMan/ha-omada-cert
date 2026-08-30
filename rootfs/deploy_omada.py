@@ -173,6 +173,29 @@ def authenticate_user_pass(session, base_url, username, password, omadac_id=None
     return None, None, None
 
 
+def get_openapi_certificate_info(session, base_urls, token, omadac_id):
+    """Retrieve existing certificate info from Omada OpenAPI."""
+    if not omadac_id:
+        return None
+
+    headers = {"Authorization": f"AccessToken={token}"}
+    for b_url in base_urls:
+        urls = [
+            f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate",
+            f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate"
+        ]
+        for url in urls:
+            try:
+                res = session.get(url, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    if data.get("errorCode") == 0:
+                        return data.get("result", {})
+            except Exception as exc:
+                logger.debug(f"Error querying certificate info from {url}: {exc}")
+    return None
+
+
 def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_path, key_path):
     """Upload SSL Certificate and Private Key to Omada Controller."""
     if not os.path.exists(cert_path):
@@ -192,52 +215,106 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
         base_urls.append(f"{base_url}:443")
         base_urls.append(f"{base_url}:8043")
 
-    headers_list = []
+    with open(cert_path, "rb") as cf:
+        cert_bytes = cf.read()
+    with open(key_path, "rb") as kf:
+        key_bytes = kf.read()
+
+    # Create combined PEM bundle (fullchain + private key)
+    combined_pem_bytes = cert_bytes.rstrip() + b"\n" + key_bytes.lstrip()
+
+    # Create PKCS#12 (.pfx) bundle without password
+    pfx_bytes = None
+    try:
+        import subprocess
+        pfx_proc = subprocess.run(
+            ["openssl", "pkcs12", "-export", "-in", cert_path, "-inkey", key_path, "-passout", "pass:"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        pfx_bytes = pfx_proc.stdout
+    except Exception as e:
+        logger.debug(f"Could not generate PKCS12 pfx bundle: {e}")
+
     if auth_type == "openapi":
-        headers_list.append({
-            "Authorization": f"AccessToken={token}"
-        })
-        headers_list.append({
-            "Authorization": f"AccessToken={token}",
-            "accessToken": token,
-            "Csrf-Token": token
-        })
-        headers_list.append({
-            "Authorization": f"Bearer {token}",
-            "accessToken": token
-        })
-    else:
-        headers_list.append({
-            "Csrf-Token": token
-        })
+        headers_list = [
+            {"Authorization": f"AccessToken={token}"},
+            {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token},
+            {"Authorization": f"Bearer {token}", "accessToken": token}
+        ]
+
+        # 1. First check official TP-Link OpenAPI endpoint: /openapi/v1/{omadacId}/system/setting/certificate
+        existing_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
+        if existing_cert is not None:
+            logger.info(f"Current Omada certificate status: {existing_cert}")
+
+        openapi_endpoints = []
+        for b_url in base_urls:
+            if omadac_id:
+                openapi_endpoints.extend([
+                    f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate",
+                    f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate"
+                ])
+
+        # Try various bundle formats (.pem with fullchain+key, .pfx, or fullchain.pem)
+        file_variants = []
+        if combined_pem_bytes:
+            file_variants.append(("omada_cert.pem", combined_pem_bytes, "application/x-pem-file"))
+        if pfx_bytes:
+            file_variants.append(("omada_cert.pfx", pfx_bytes, "application/x-pkcs12"))
+        file_variants.append(("fullchain.pem", cert_bytes, "application/x-pem-file"))
+
+        for url in openapi_endpoints:
+            for fname, fbytes, mtype in file_variants:
+                for headers in headers_list:
+                    try:
+                        logger.info(f"Uploading certificate ({fname}) to Omada OpenAPI at {url}...")
+                        files = {"file": (fname, fbytes, mtype)}
+                        params = {"cerName": fname}
+                        data = {"cerName": fname}
+                        res = session.post(url, headers=headers, params=params, data=data, files=files, timeout=30)
+                        if res.status_code == 200:
+                            try:
+                                res_json = res.json()
+                                if res_json.get("errorCode") == 0:
+                                    logger.info(f"SSL Certificate '{fname}' successfully installed on Omada Controller via OpenAPI!")
+                                    return True
+                                else:
+                                    logger.warning(f"Omada OpenAPI response at {url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+                            except Exception:
+                                logger.debug(f"Received non-JSON response from {url}: {res.text[:100]}")
+                        else:
+                            logger.debug(f"HTTP status {res.status_code} during OpenAPI upload to {url}")
+                    except Exception as exc:
+                        logger.debug(f"Exception during OpenAPI certificate upload to {url}: {exc}")
+
+        logger.warning("Omada OpenAPI certificate endpoints could not complete upload. Checking fallback routes...")
+
+    # Fallback to Web API session endpoints
+    headers_list = [{"Csrf-Token": token}] if auth_type != "openapi" else [
+        {"Authorization": f"AccessToken={token}"},
+        {"Csrf-Token": token}
+    ]
 
     candidate_upload_urls = []
     for b_url in base_urls:
         if omadac_id:
-            if auth_type == "session":
-                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/maintenance/ssl")
-                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/system/ssl")
-                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/maintenance/customcert")
-                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/ssl/customcert")
-                candidate_upload_urls.append(f"{b_url}/api/v2/maintenance/ssl")
-                candidate_upload_urls.append(f"{b_url}/api/v2/system/ssl")
-            else:
-                candidate_upload_urls.append(f"{b_url}/openapi/v1/{omadac_id}/maintenance/ssl")
-                candidate_upload_urls.append(f"{b_url}/{omadac_id}/openapi/v1/maintenance/ssl")
-                candidate_upload_urls.append(f"{b_url}/openapi/v1/{omadac_id}/system/ssl")
-                candidate_upload_urls.append(f"{b_url}/{omadac_id}/openapi/v1/system/ssl")
-                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/maintenance/ssl")
-                candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/system/ssl")
+            candidate_upload_urls.extend([
+                f"{b_url}/{omadac_id}/api/v2/maintenance/ssl",
+                f"{b_url}/{omadac_id}/api/v2/system/ssl",
+                f"{b_url}/{omadac_id}/api/v2/maintenance/customcert",
+                f"{b_url}/{omadac_id}/api/v2/ssl/customcert",
+                f"{b_url}/api/v2/maintenance/ssl",
+                f"{b_url}/api/v2/system/ssl"
+            ])
         else:
-            if auth_type == "session":
-                candidate_upload_urls.append(f"{b_url}/api/v2/maintenance/ssl")
-                candidate_upload_urls.append(f"{b_url}/api/v2/system/ssl")
-                candidate_upload_urls.append(f"{b_url}/api/v2/maintenance/customcert")
-                candidate_upload_urls.append(f"{b_url}/api/v2/ssl/customcert")
-            else:
-                candidate_upload_urls.append(f"{b_url}/openapi/v1/maintenance/ssl")
-                candidate_upload_urls.append(f"{b_url}/openapi/v1/system/ssl")
-                candidate_upload_urls.append(f"{b_url}/api/v2/maintenance/ssl")
+            candidate_upload_urls.extend([
+                f"{b_url}/api/v2/maintenance/ssl",
+                f"{b_url}/api/v2/system/ssl",
+                f"{b_url}/api/v2/maintenance/customcert",
+                f"{b_url}/api/v2/ssl/customcert"
+            ])
 
     # De-duplicate while preserving order
     seen_urls = set()
@@ -251,15 +328,14 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
         for headers in headers_list:
             try:
                 logger.info(f"Uploading SSL certificate and key to {url}...")
-                with open(cert_path, "rb") as cert_file, open(key_path, "rb") as key_file:
-                    files = {
-                        "certFile": ("fullchain.pem", cert_file, "application/x-pem-file"),
-                        "keyFile": ("privkey.pem", key_file, "application/x-pem-file")
-                    }
-                    data = {
-                        "type": 1
-                    }
-                    res = session.post(url, headers=headers, data=data, files=files, timeout=30)
+                files = {
+                    "certFile": ("fullchain.pem", cert_bytes, "application/x-pem-file"),
+                    "keyFile": ("privkey.pem", key_bytes, "application/x-pem-file")
+                }
+                data = {
+                    "type": 1
+                }
+                res = session.post(url, headers=headers, data=data, files=files, timeout=30)
 
                 if res.status_code == 200:
                     try:

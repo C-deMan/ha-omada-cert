@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.4] - 2026-08-31
+
+### Added
+- **Official Omada OpenAPI Certificate Endpoint Implementation**:
+  - Added query and upload support for official TP-Link OpenAPI endpoint: `POST /openapi/v1/{omadacId}/system/setting/certificate` with `cerName` query/multipart parameter.
+  - Automatically generates combined `.pem` (fullchain + private key) and PKCS#12 `.pfx` bundles to support all Omada certificate storage formats.
+  - Added `GET /openapi/v1/{omadacId}/system/setting/certificate` pre-check to inspect the active controller certificate status.
+
 ## [1.1.3] - 2026-08-30
 
 ### Added
