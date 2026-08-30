@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0] - 2026-08-31
+
+### Added
+- **Enforced 2048-bit Unencrypted RSA Private Keys**:
+  - Configured Certbot to explicitly generate 2048-bit RSA keys (`--key-type rsa --rsa-key-size 2048`).
+  - Added automatic inspection of existing keys to detect non-RSA formats (e.g. default ECDSA), automatically triggering renewal to RSA format.
+  - Added PKCS#1 format conversion (`-----BEGIN RSA PRIVATE KEY-----`) in `deploy_omada.py` so TP-Link Omada Controllers (OC200/OC300) accept the certificate key without "Invalid key. Only unencrypted RSA keys can be used" errors.
+- **Schedule Frequency (Daily / Weekly / Monthly)**:
+  - Added `schedule_frequency` option: `every day` (or `daily`), `weekly`, `monthly`.
+  - Added `schedule_time` option: e.g. `03:00` (runs daily, weekly on Sundays, or monthly on the 1st).
+  - Also runs automatically on add-on start or restart.
+- **Temporarily Removed Reboot Option**:
+  - Streamlined deployment flow and dashboard to focus on certificate synchronization and validation.
+
 ## [1.2.3] - 2026-08-31
 
 ### Added

@@ -177,53 +177,6 @@ CF_CREDS_FILE="/data/letsencrypt/cloudflare.ini"
 echo "dns_cloudflare_api_token = $CLOUDFLARE_API_TOKEN" > "$CF_CREDS_FILE"
 chmod 600 "$CF_CREDS_FILE"
 
-check_and_run_reboot() {
-    if [ ! -f "/data/pending_omada_reboot" ]; then
-        return 0
-    fi
-
-    local reboot_on_update
-    local reboot_day
-    local reboot_time
-    reboot_on_update=$(jq --raw-output '.reboot_controller_on_update // true' "$CONFIG_PATH" 2>/dev/null || echo "true")
-    reboot_day=$(jq --raw-output '.reboot_schedule_day // "any"' "$CONFIG_PATH" 2>/dev/null | tr '[:upper:]' '[:lower:]')
-    reboot_time=$(jq --raw-output '.reboot_schedule_time // "03:00"' "$CONFIG_PATH" 2>/dev/null)
-
-    if [ "$reboot_on_update" != "true" ]; then
-        return 0
-    fi
-
-    # Check if time is "immediate"
-    if [ "$reboot_time" = "immediate" ] || [ "$reboot_day" = "immediate" ]; then
-        log_info "Immediate Omada Controller reboot requested..."
-        if python3 /deploy_omada.py reboot "" "" "$CONFIG_PATH"; then
-            rm -f "/data/pending_omada_reboot"
-            log_info "Omada Controller reboot triggered successfully."
-        fi
-        return 0
-    fi
-
-    local current_day
-    local current_time
-    current_day=$(date "+%A" | tr '[:upper:]' '[:lower:]')
-    current_time=$(date "+%H:%M")
-
-    # Match day ("any" or specific day like "sunday")
-    local day_match=false
-    if [ "$reboot_day" = "any" ] || [ "$reboot_day" = "$current_day" ]; then
-        day_match=true
-    fi
-
-    # Match time (e.g. "03:00")
-    if [ "$day_match" = "true" ] && [ "$current_time" = "$reboot_time" ]; then
-        log_info "Scheduled maintenance window reached ($current_day $current_time). Rebooting Omada Controller to activate certificate..."
-        if python3 /deploy_omada.py reboot "" "" "$CONFIG_PATH"; then
-            rm -f "/data/pending_omada_reboot"
-            log_info "Omada Controller reboot triggered successfully."
-        fi
-    fi
-}
-
 deploy_certificates() {
     CERT_DIR="/data/letsencrypt/live/${PRIMARY_DOMAIN}"
     FULLCHAIN_FILE="${CERT_DIR}/fullchain.pem"
@@ -266,7 +219,10 @@ deploy_certificates() {
 
 run_certbot() {
     print_cycle_start
-    log_info "Checking / Renewing certificates with Certbot..."
+    log_info "Checking / Renewing certificates with Certbot (2048-bit RSA)..."
+
+    CERT_DIR="/data/letsencrypt/live/${PRIMARY_DOMAIN}"
+    PRIVKEY_FILE="${CERT_DIR}/privkey.pem"
 
     CERTBOT_FLAGS=(
         "certonly"
@@ -279,9 +235,19 @@ run_certbot() {
         "--non-interactive"
         "--agree-tos"
         "--email" "$LETSENCRYPT_EMAIL"
+        "--key-type" "rsa"
+        "--rsa-key-size" "2048"
         "--keep-until-expiring"
         "--expand"
     )
+
+    # If an existing key exists but is not an unencrypted RSA key (e.g. default ECDSA), force renewal to RSA
+    if [ -f "$PRIVKEY_FILE" ]; then
+        if ! openssl rsa -in "$PRIVKEY_FILE" -check -noout >/dev/null 2>&1; then
+            log_warn "Existing certificate is not an unencrypted RSA key (Omada requires unencrypted RSA). Forcing renewal with 2048-bit RSA..."
+            CERTBOT_FLAGS+=("--force-renewal")
+        fi
+    fi
 
     if [ "$LETSENCRYPT_STAGING" = "true" ]; then
         log_info "Using Let's Encrypt Staging Environment (for testing)."
@@ -301,30 +267,53 @@ run_certbot() {
 # Initial certificate run on startup/restart
 run_certbot
 
-# Scheduled check loop: Runs at configured day and time
-SCHEDULE_DAY=$(jq --raw-output '.reboot_schedule_day // .schedule_day // "any"' "$CONFIG_PATH" 2>/dev/null | tr '[:upper:]' '[:lower:]')
-SCHEDULE_TIME=$(jq --raw-output '.reboot_schedule_time // .schedule_time // "03:00"' "$CONFIG_PATH" 2>/dev/null)
+# Scheduled check loop: Supports every day / daily, weekly, monthly
+SCHEDULE_FREQ=$(jq --raw-output '.schedule_frequency // "daily"' "$CONFIG_PATH" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+SCHEDULE_TIME=$(jq --raw-output '.schedule_time // "03:00"' "$CONFIG_PATH" 2>/dev/null)
 
-log_info "Scheduled checks active. Scheduled maintenance window: $(echo "$SCHEDULE_DAY" | awk '{print toupper(substr($0,1,1))substr($0,2)}') at ${SCHEDULE_TIME}."
+log_info "Scheduled checks active. Frequency: ${SCHEDULE_FREQ} at ${SCHEDULE_TIME}."
 
 LAST_SCHEDULED_RUN=""
 
 while true; do
     sleep 25
-    CURRENT_DAY=$(date "+%A" | tr '[:upper:]' '[:lower:]')
     CURRENT_TIME=$(date "+%H:%M")
+    CURRENT_DAY_OF_WEEK=$(date "+%u") # 1..7 (Monday..Sunday, 7 = Sunday)
+    CURRENT_DAY_OF_MONTH=$(date "+%d") # 01..31
     CURRENT_SLOT="$(date '+%Y-%m-%d')_${CURRENT_TIME}"
 
-    # Match day ("any" or specific day like "sunday")
-    DAY_MATCH=false
-    if [ "$SCHEDULE_DAY" = "any" ] || [ "$SCHEDULE_DAY" = "$CURRENT_DAY" ]; then
-        DAY_MATCH=true
+    TIME_MATCH=false
+    if [ "$CURRENT_TIME" = "$SCHEDULE_TIME" ]; then
+        TIME_MATCH=true
     fi
 
-    # Check if we hit the scheduled time and haven't run during this minute slot
-    if [ "$DAY_MATCH" = "true" ] && [ "$CURRENT_TIME" = "$SCHEDULE_TIME" ] && [ "$LAST_SCHEDULED_RUN" != "$CURRENT_SLOT" ]; then
-        LAST_SCHEDULED_RUN="$CURRENT_SLOT"
-        log_info "Scheduled check time reached ($CURRENT_DAY $CURRENT_TIME). Running certificate check and maintenance cycle..."
-        run_certbot
+    SHOULD_RUN=false
+    if [ "$TIME_MATCH" = "true" ] && [ "$LAST_SCHEDULED_RUN" != "$CURRENT_SLOT" ]; then
+        case "$SCHEDULE_FREQ" in
+            "every day"|"daily")
+                SHOULD_RUN=true
+                ;;
+            "weekly")
+                # Run once a week on Sunday (day 7)
+                if [ "$CURRENT_DAY_OF_WEEK" -eq 7 ]; then
+                    SHOULD_RUN=true
+                fi
+                ;;
+            "monthly")
+                # Run on the 1st of every month
+                if [ "$CURRENT_DAY_OF_MONTH" = "01" ] || [ "$CURRENT_DAY_OF_MONTH" = "1" ]; then
+                    SHOULD_RUN=true
+                fi
+                ;;
+            *)
+                SHOULD_RUN=true
+                ;;
+        esac
+
+        if [ "$SHOULD_RUN" = "true" ]; then
+            LAST_SCHEDULED_RUN="$CURRENT_SLOT"
+            log_info "Scheduled check time reached (${SCHEDULE_FREQ} at ${CURRENT_TIME}). Running certificate check..."
+            run_certbot
+        fi
     fi
 done

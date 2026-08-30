@@ -53,7 +53,7 @@ def get_status_data():
     domains = options.get("domains", [])
     primary_domain = domains[0] if domains else "Not configured"
     cert_path = f"/data/letsencrypt/live/{primary_domain}/fullchain.pem"
-    
+
     cert_info = {}
     if os.path.exists(cert_path):
         try:
@@ -69,8 +69,6 @@ def get_status_data():
                     cert_info[k.strip().lower()] = v.strip()
         except Exception:
             pass
-
-    pending_reboot = os.path.exists("/data/pending_omada_reboot")
 
     # Read recent logs from addon log file
     recent_logs = ""
@@ -91,10 +89,8 @@ def get_status_data():
         "cert_fingerprint": cert_info.get("sha256 fingerprint", "N/A"),
         "omada_enabled": options.get("omada", {}).get("enabled", False),
         "omada_url": options.get("omada", {}).get("url", "N/A"),
-        "reboot_on_update": options.get("reboot_controller_on_update", True),
-        "reboot_day": options.get("reboot_schedule_day", "any"),
-        "reboot_time": options.get("reboot_schedule_time", "03:00"),
-        "pending_reboot": pending_reboot,
+        "schedule_frequency": options.get("schedule_frequency", "daily"),
+        "schedule_time": options.get("schedule_time", "03:00"),
         "last_action_time": LAST_ACTION_TIME,
         "last_action_output": LAST_ACTION_OUTPUT,
         "recent_logs": recent_logs
@@ -122,10 +118,14 @@ class IngressHandler(BaseHTTPRequestHandler):
             self._send_json(get_status_data())
             return
 
-        ingress_path = self.headers.get("X-Ingress-Path", "")
+        if path.endswith("/api/logs"):
+            data = get_status_data()
+            self._send_json({"logs": data.get("recent_logs", "")})
+            return
+
+        ingress_path = self.headers.get("X-Ingress-Path", "").rstrip("/")
         status = get_status_data()
 
-        pending_badge = '<span class="badge warning">Pending Reboot</span>' if status["pending_reboot"] else '<span class="badge success">Synchronized</span>'
         cert_badge = '<span class="badge success">Active</span>' if status["cert_exists"] else '<span class="badge warning">Not Issued Yet</span>'
 
         html = f"""<!DOCTYPE html>
@@ -158,7 +158,7 @@ class IngressHandler(BaseHTTPRequestHandler):
             line-height: 1.5;
         }}
         .container {{
-            max-width: 900px;
+            max-width: 960px;
             margin: 0 auto;
         }}
         .header {{
@@ -178,7 +178,7 @@ class IngressHandler(BaseHTTPRequestHandler):
         }}
         .grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             gap: 16px;
             margin-bottom: 24px;
         }}
@@ -189,12 +189,12 @@ class IngressHandler(BaseHTTPRequestHandler):
             padding: 18px;
         }}
         .card h2 {{
-            font-size: 15px;
+            font-size: 14px;
             color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-top: 0;
-            margin-bottom: 12px;
+            margin-bottom: 14px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -289,7 +289,7 @@ class IngressHandler(BaseHTTPRequestHandler):
 
         <div class="grid">
             <div class="card">
-                <h2>Let's Encrypt Certificate</h2>
+                <h2>Let's Encrypt Certificate (2048-bit RSA)</h2>
                 <div class="item">
                     <div class="item-label">Primary Domain</div>
                     <div class="item-value">{status["primary_domain"]}</div>
@@ -309,7 +309,7 @@ class IngressHandler(BaseHTTPRequestHandler):
             </div>
 
             <div class="card">
-                <h2>Omada Controller {pending_badge}</h2>
+                <h2>Omada Controller</h2>
                 <div class="item">
                     <div class="item-label">Controller URL</div>
                     <div class="item-value">{status["omada_url"]}</div>
@@ -319,12 +319,12 @@ class IngressHandler(BaseHTTPRequestHandler):
                     <div class="item-value">OpenAPI Application Client</div>
                 </div>
                 <div class="item">
-                    <div class="item-label">Reboot Schedule</div>
-                    <div class="item-value">{status["reboot_day"].capitalize()} at {status["reboot_time"]} (Auto: {status["reboot_on_update"]})</div>
+                    <div class="item-label">Scheduled Maintenance</div>
+                    <div class="item-value">{str(status["schedule_frequency"]).capitalize()} at {status["schedule_time"]}</div>
                 </div>
                 <div class="item">
-                    <div class="item-label">Upload Format</div>
-                    <div class="item-value">OpenAPI Dual-file PEM (/certificate & /ssl-key)</div>
+                    <div class="item-label">Key & Format</div>
+                    <div class="item-value">Unencrypted RSA PEM (/certificate & /ssl-key)</div>
                 </div>
             </div>
         </div>
@@ -332,9 +332,6 @@ class IngressHandler(BaseHTTPRequestHandler):
         <div class="actions">
             <button id="btnCheck" class="btn btn-accent" onclick="triggerAction('check')">
                 🔄 Check & Sync Certificate Now
-            </button>
-            <button id="btnReboot" class="btn btn-danger" onclick="triggerAction('reboot')">
-                ⚡ Reboot Omada Controller Now
             </button>
             <button id="btnClear" class="btn btn-muted" onclick="triggerAction('clear_logs')">
                 🧹 Clear Log File
@@ -366,13 +363,11 @@ class IngressHandler(BaseHTTPRequestHandler):
         
         async function triggerAction(action) {{
             const btnCheck = document.getElementById("btnCheck");
-            const btnReboot = document.getElementById("btnReboot");
             const btnClear = document.getElementById("btnClear");
             const output = document.getElementById("output");
             const actionTime = document.getElementById("actionTime");
 
             btnCheck.disabled = true;
-            btnReboot.disabled = true;
             btnClear.disabled = true;
             output.innerText = "Executing " + action + "... please wait...";
 
@@ -388,7 +383,6 @@ class IngressHandler(BaseHTTPRequestHandler):
                 output.innerText = "Error executing action: " + err;
             }} finally {{
                 btnCheck.disabled = false;
-                btnReboot.disabled = false;
                 btnClear.disabled = false;
             }}
         }}
@@ -416,17 +410,6 @@ class IngressHandler(BaseHTTPRequestHandler):
 
             cmd = f"python3 /deploy_omada.py deploy '{cert_path}' '{key_path}' '{CONFIG_PATH}'"
             success, out = run_command_action(cmd)
-            self._send_json({"success": success, "output": out})
-            return
-
-        if path.endswith("/api/reboot"):
-            cmd = f"python3 /deploy_omada.py reboot '' '' '{CONFIG_PATH}'"
-            success, out = run_command_action(cmd)
-            if success and os.path.exists("/data/pending_omada_reboot"):
-                try:
-                    os.remove("/data/pending_omada_reboot")
-                except Exception:
-                    pass
             self._send_json({"success": success, "output": out})
             return
 

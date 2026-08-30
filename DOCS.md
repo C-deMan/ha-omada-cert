@@ -29,13 +29,11 @@ domains:
 cloudflare_api_token: YOUR_CLOUDFLARE_API_TOKEN
 letsencrypt_email: admin@yourdomain.com
 letsencrypt_staging: false
-renew_interval_hours: 12
 copy_to_ha_ssl: true
 ssl_subdir: omada
 timezone: ""
-reboot_controller_on_update: true
-reboot_schedule_day: "any"
-reboot_schedule_time: "03:00"
+schedule_frequency: "daily"
+schedule_time: "03:00"
 omada:
   enabled: true
   url: "https://192.168.1.1:8043"
@@ -53,13 +51,17 @@ omada:
 | `cloudflare_api_token` | string | **Yes** | Cloudflare API Token with `Zone:DNS:Edit` permission. |
 | `letsencrypt_email` | string | **Yes** | Email address for Let's Encrypt registration and expiry notifications. |
 | `letsencrypt_staging` | boolean | No | Set to `true` to test certificate generation against Let's Encrypt staging servers without hitting rate limits. |
-| `renew_interval_hours` | integer | No | Interval (in hours) between renewal checks (default: `12`). |
 | `copy_to_ha_ssl` | boolean | No | Copies the certificate files to `/ssl/` on Home Assistant (default: `true`). |
 | `ssl_subdir` | string | No | Subdirectory inside `/ssl/` to store the certificates to prevent overwriting Home Assistant's default certificates (default: `omada`). |
 | `timezone` | string | No | Custom timezone (e.g., `Europe/Amsterdam`). If left blank, automatically detected from Home Assistant. |
-| `reboot_controller_on_update` | boolean | No | Automatically reboot the Omada Controller when a new certificate is installed (default: `true`). |
-| `reboot_schedule_day` | string | No | Maintenance day for controller reboot (`any`, `monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`). Default: `any`. |
-| `reboot_schedule_time` | string | No | Maintenance time in 24h format (e.g. `03:00` or `immediate`). Default: `03:00`. |
+| `schedule_frequency` | string | No | Certificate check schedule frequency: `daily` (or `every day`), `weekly` (Sundays), `monthly` (1st of month). Default: `daily`. |
+| `schedule_time` | string | No | Maintenance check time in 24h format (e.g. `03:00`). Default: `03:00`. |
+| `omada.enabled` | boolean | **Yes** | Set to `true` to push certificates to Omada Controller automatically. |
+| `omada.url` | string | Conditional | URL of your Omada Controller (e.g. `https://192.168.1.1:8043`). |
+| `omada.client_id` | string | **Yes** | Omada OpenAPI Application Client ID (App ID). |
+| `omada.client_secret` | string | **Yes** | Omada OpenAPI Application Client Secret. |
+| `omada.omadac_id` | string | No | Controller ID (auto-detected if omitted). |
+| `omada.verify_ssl` | boolean | No | Set to `false` if your Omada controller currently uses a self-signed cert (default: `false`). |
 | `omada.enabled` | boolean | **Yes** | Set to `true` to push certificates to Omada Controller automatically. |
 | `omada.url` | string | Conditional | URL of your Omada Controller (e.g. `https://192.168.1.1:8043`). |
 | `omada.client_id` | string | **Yes** | Omada OpenAPI Application Client ID (App ID). |

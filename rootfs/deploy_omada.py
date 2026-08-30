@@ -467,19 +467,27 @@ def execute_deployment(cert_path, key_path, options_file, mode="deploy"):
 
     with open(cert_path, "rb") as cf:
         cert_bytes = cf.read()
-    with open(key_path, "rb") as kf:
-        key_bytes = kf.read()
+
+    # Convert/validate key to standard unencrypted RSA PKCS#1 format (BEGIN RSA PRIVATE KEY)
+    try:
+        rsa_proc = subprocess.run(
+            ["openssl", "rsa", "-in", key_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        key_bytes = rsa_proc.stdout
+        logger.info("Validated private key format: Unencrypted RSA PKCS#1 key format.")
+    except Exception as exc:
+        logger.warning(f"Could not convert key to traditional RSA format (openssl rsa): {exc}. Using raw file.")
+        with open(key_path, "rb") as kf:
+            key_bytes = kf.read()
+
     combined_pem_bytes = cert_bytes.rstrip() + b"\n" + key_bytes.lstrip()
 
     uploaded = upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes, key_bytes, combined_pem_bytes)
     if uploaded:
-        logger.info("Omada SSL certificate and key uploaded successfully via OpenAPI.")
-        reboot_on_update = options.get("reboot_controller_on_update", True)
-        if reboot_on_update:
-            logger.info("Reboot on update is enabled. Initiating reboot on Omada Controller to apply certificate...")
-            reboot_omada_controller(session, base_urls, token, omadac_id)
-        else:
-            logger.info("Reboot on update is disabled. Please restart Omada Controller manually for the certificate to take effect.")
+        logger.info("Omada SSL certificate and RSA private key uploaded successfully via OpenAPI.")
         return True
 
     logger.error("Failed to upload SSL certificate to Omada Controller via OpenAPI.")

@@ -10,11 +10,11 @@ A Home Assistant Supervisor Add-on to automatically generate, renew, and deploy 
 ## Highlights
 
 - **DNS-01 Challenge**: No open ports (80/443) or port forwarding needed. Supports wildcard certificates (`*.yourdomain.com`).
+- **2048-bit RSA Encryption**: Automatic generation of standard unencrypted RSA certificates compatible with TP-Link Omada Controllers.
 - **Official Omada OpenAPI Integration**: Uploads certificates directly to your TP-Link Omada Controller (OC200, OC300, or Software Controller) using secure Application Client credentials (Client ID & Client Secret).
-- **Interactive Ingress Web Dashboard**: Live web UI within Home Assistant with manual **Check & Sync Certificate**, **Reboot Omada Controller**, and **Clear Log File** actions.
-- **Maintenance Reboot Scheduling**: Automatically reboot the controller at your chosen maintenance window (day/time) after certificate renewal to activate new HTTPS certificates.
+- **Interactive Ingress Web Dashboard**: Live web UI within Home Assistant with manual **Check & Sync Certificate** and **Clear Log File** actions.
+- **Configurable Schedule Frequency**: Schedule checks `every day` (daily), `weekly`, or `monthly` at your chosen time.
 - **Home Assistant `/ssl` Export**: Copies the certificates to Home Assistant's `/ssl/omada` folder for HA Core or other add-ons.
-- **Automated Background Renewal**: Continuous renewal daemon keeping certificates valid without user intervention.
 
 ---
 
@@ -41,12 +41,10 @@ domains:
 cloudflare_api_token: "your_cloudflare_dns_edit_api_token"
 letsencrypt_email: "admin@yourdomain.com"
 letsencrypt_staging: false
-renew_interval_hours: 12
 copy_to_ha_ssl: true
 ssl_subdir: "omada"
-reboot_controller_on_update: true
-reboot_schedule_day: "any"
-reboot_schedule_time: "03:00"
+schedule_frequency: "daily"
+schedule_time: "03:00"
 omada:
   enabled: true
   url: "https://192.168.1.1:8043"
