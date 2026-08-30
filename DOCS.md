@@ -35,8 +35,9 @@ ssl_subdir: omada
 omada:
   enabled: true
   url: "https://192.168.1.1:8043"
-  username: "admin"
-  password: "your_omada_password"
+  client_id: "YOUR_OMADA_CLIENT_ID"
+  client_secret: "YOUR_OMADA_CLIENT_SECRET"
+  omadac_id: ""
   verify_ssl: false
 ```
 
@@ -53,9 +54,20 @@ omada:
 | `ssl_subdir` | string | No | Subdirectory inside `/ssl/` to store the certificates to prevent overwriting Home Assistant's default certificates (default: `omada`). |
 | `omada.enabled` | boolean | **Yes** | Set to `true` to push certificates to Omada Controller automatically. |
 | `omada.url` | string | Conditional | URL of your Omada Controller (e.g. `https://192.168.1.1:8043`). |
-| `omada.username` | string | Conditional | Administrator username for your Omada Controller. |
-| `omada.password` | string | Conditional | Administrator password for your Omada Controller. |
+| `omada.client_id` | string | Recommended | Omada OpenAPI Application Client ID (App ID). |
+| `omada.client_secret` | string | Recommended | Omada OpenAPI Application Client Secret. |
+| `omada.omadac_id` | string | No | Controller ID (auto-detected if omitted). |
+| `omada.username` | string | Optional | Administrator username (if not using OpenAPI client). |
+| `omada.password` | string | Optional | Administrator password (if not using OpenAPI client). |
 | `omada.verify_ssl` | boolean | No | Set to `false` if your Omada controller currently uses a self-signed cert (default: `false`). |
+
+### Setting up Omada OpenAPI Application
+
+1. In your Omada Controller web interface, go to **Global View** -> **Settings** -> **OpenAPI** (or **API**).
+2. Enable OpenAPI.
+3. Click **Add Application** / **Create Application**.
+4. Set a name (e.g., `Home Assistant Cert Renewal`) and assign administrator permissions.
+5. Copy the generated **Client ID** (App ID) and **Client Secret** into the add-on configuration.
 
 ### Obtaining a Cloudflare API Token
 

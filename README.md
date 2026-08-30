@@ -45,8 +45,9 @@ ssl_subdir: "omada"
 omada:
   enabled: true
   url: "https://192.168.1.1:8043"
-  username: "admin"
-  password: "your_omada_password"
+  client_id: "your_omada_client_id"
+  client_secret: "your_omada_client_secret"
+  omadac_id: ""
   verify_ssl: false
 ```
 
