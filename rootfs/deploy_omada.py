@@ -170,8 +170,21 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
         logger.error(f"Key file not found: {key_path}")
         return False
 
+    base_urls = [base_url]
+    if ":8043" in base_url:
+        base_urls.append(base_url.replace(":8043", ":443"))
+        base_urls.append(base_url.replace(":8043", ""))
+    elif ":443" in base_url:
+        base_urls.append(base_url.replace(":443", ":8043"))
+    else:
+        base_urls.append(f"{base_url}:443")
+        base_urls.append(f"{base_url}:8043")
+
     headers_list = []
     if auth_type == "openapi":
+        headers_list.append({
+            "Authorization": f"AccessToken={token}"
+        })
         headers_list.append({
             "Authorization": f"AccessToken={token}",
             "accessToken": token,
@@ -186,12 +199,27 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
             "Csrf-Token": token
         })
 
+    candidate_upload_urls = []
+    for b_url in base_urls:
+        if omadac_id:
+            # TP-Link OpenAPI documented pattern: /{omadacId}/openapi/v1/... or /openapi/v1/{omadacId}/...
+            candidate_upload_urls.append(f"{b_url}/openapi/v1/{omadac_id}/maintenance/ssl")
+            candidate_upload_urls.append(f"{b_url}/{omadac_id}/openapi/v1/maintenance/ssl")
+            candidate_upload_urls.append(f"{b_url}/openapi/v1/{omadac_id}/system/ssl")
+            candidate_upload_urls.append(f"{b_url}/{omadac_id}/openapi/v1/system/ssl")
+            candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/maintenance/ssl")
+            candidate_upload_urls.append(f"{b_url}/{omadac_id}/api/v2/system/ssl")
+        candidate_upload_urls.append(f"{b_url}/openapi/v1/maintenance/ssl")
+        candidate_upload_urls.append(f"{b_url}/openapi/v1/system/ssl")
+        candidate_upload_urls.append(f"{b_url}/api/v2/maintenance/ssl")
+
+    # De-duplicate while preserving order
+    seen_urls = set()
     upload_urls = []
-    if omadac_id:
-        upload_urls.append(f"{base_url}/openapi/v1/{omadac_id}/maintenance/ssl")
-        upload_urls.append(f"{base_url}/{omadac_id}/api/v2/maintenance/ssl")
-    upload_urls.append(f"{base_url}/openapi/v1/maintenance/ssl")
-    upload_urls.append(f"{base_url}/api/v2/maintenance/ssl")
+    for u in candidate_upload_urls:
+        if u not in seen_urls:
+            seen_urls.add(u)
+            upload_urls.append(u)
 
     for url in upload_urls:
         for headers in headers_list:
@@ -208,12 +236,15 @@ def upload_ssl_certificate(session, base_url, token, omadac_id, auth_type, cert_
                     res = session.post(url, headers=headers, data=data, files=files, timeout=30)
 
                 if res.status_code == 200:
-                    res_json = res.json()
-                    if res_json.get("errorCode") == 0:
-                        logger.info("SSL Certificate successfully uploaded and installed on Omada Controller!")
-                        return True
-                    else:
-                        logger.warning(f"Omada response at {url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+                    try:
+                        res_json = res.json()
+                        if res_json.get("errorCode") == 0:
+                            logger.info("SSL Certificate successfully uploaded and installed on Omada Controller!")
+                            return True
+                        else:
+                            logger.warning(f"Omada response at {url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+                    except Exception:
+                        logger.debug(f"Received non-JSON response from {url}: {res.text[:100]}")
                 else:
                     logger.debug(f"HTTP status {res.status_code} during upload to {url}")
             except Exception as exc:

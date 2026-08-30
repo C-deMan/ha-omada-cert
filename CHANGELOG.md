@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.1] - 2026-08-30
+
+### Fixed
+- Updated SSL certificate upload routes in `deploy_omada.py` to automatically include OpenAPI port 443 routes alongside port 8043 routes.
+- Added candidate endpoint structures (`/{omadacId}/openapi/v1/...`, `/openapi/v1/{omadacId}/...`, `/openapi/v1/system/ssl`, etc.) to match TP-Link OpenAPI standards.
+
 ## [1.1.0] - 2026-08-30
 
 ### Fixed
