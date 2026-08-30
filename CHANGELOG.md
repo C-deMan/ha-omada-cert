@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.7] - 2026-08-30
+
+### Fixed
+- Updated Omada OpenAPI token authentication according to TP-Link Northbound API Specification Section 2.3.1 (Client Credentials Mode).
+- Endpoint now explicitly targets `POST /openapi/authorize/token?grant_type=client_credentials` with payload `{"omadacId": "...", "client_id": "...", "client_secret": "..."}`.
+
 ## [1.0.6] - 2026-08-30
 
 ### Added

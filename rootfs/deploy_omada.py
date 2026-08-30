@@ -43,52 +43,35 @@ def get_controller_info(session, base_url):
 
 
 def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=None):
-    """Authenticate with Omada OpenAPI using Client ID (App ID / Client ID) and Client Secret (or signature)."""
+    """Authenticate with Omada OpenAPI according to TP-Link OpenAPI Specification (Client Credentials Mode)."""
     logger.info("Authenticating with Omada Controller via OpenAPI Application Client...")
 
-    timestamp = int(time.time() * 1000)
-    
-    # Generate signature if needed: sign(client_id + timestamp + client_secret)
-    raw_sign_str = f"{client_id}{timestamp}{client_secret}"
-    signature = hmac.new(client_secret.encode("utf-8"), raw_sign_str.encode("utf-8"), hashlib.sha256).hexdigest()
-    md5_sign = hashlib.md5(raw_sign_str.encode("utf-8")).hexdigest()
-
-    # Omada Controller OpenAPI standard payload formats across different controller versions
-    payloads = [
-        # Standard Omada OpenAPI v1 payload
-        {"omadacId": omadac_id, "appId": client_id, "secret": client_secret},
-        {"omadacId": omadac_id, "client_id": client_id, "client_secret": client_secret},
-        {"omadacId": omadac_id, "appKey": client_id, "appSecret": client_secret},
-        # Omada signed token request
-        {"omadacId": omadac_id, "appId": client_id, "timestamp": timestamp, "sign": signature},
-        {"omadacId": omadac_id, "appId": client_id, "timestamp": timestamp, "sign": md5_sign},
-        # Without omadacId inside JSON body
-        {"appId": client_id, "secret": client_secret},
-        {"client_id": client_id, "client_secret": client_secret},
-        {"appKey": client_id, "appSecret": client_secret}
-    ]
-
-    urls = [
-        f"{base_url}/openapi/v1/token",
-        f"{base_url}/openapi/authorize/token",
-        f"{base_url}/api/v2/openapi/token"
+    # Specification 2.3.1: Client Credentials Mode
+    # Endpoint: POST /openapi/authorize/token?grant_type=client_credentials
+    # Body: {"omadacId": "...", "client_id": "...", "client_secret": "..."}
+    primary_urls = [
+        f"{base_url}/openapi/authorize/token?grant_type=client_credentials",
+        f"{base_url}/openapi/v1/token?grant_type=client_credentials"
     ]
     if omadac_id:
-        urls = [
-            f"{base_url}/openapi/v1/token?omadacId={omadac_id}",
-            f"{base_url}/{omadac_id}/openapi/v1/token",
-            f"{base_url}/openapi/authorize/token?omadacId={omadac_id}",
-            f"{base_url}/{omadac_id}/api/v2/openapi/token",
-            f"{base_url}/api/v2/openapi/token?omadacId={omadac_id}"
-        ] + urls
+        primary_urls.extend([
+            f"{base_url}/openapi/authorize/token?grant_type=client_credentials&omadacId={omadac_id}",
+            f"{base_url}/{omadac_id}/openapi/authorize/token?grant_type=client_credentials"
+        ])
 
-    for url in urls:
+    payloads = [
+        # Official TP-Link OpenAPI format
+        {"omadacId": omadac_id, "client_id": client_id, "client_secret": client_secret},
+        {"omadacId": omadac_id, "appId": client_id, "secret": client_secret},
+        {"omadacId": omadac_id, "appKey": client_id, "appSecret": client_secret},
+        {"client_id": client_id, "client_secret": client_secret, "grant_type": "client_credentials"}
+    ]
+
+    for url in primary_urls:
         for payload in payloads:
-            # Clean up None values
             current_payload = {k: v for k, v in payload.items() if v is not None}
-
             try:
-                # Also try query params style for GET or POST
+                logger.info(f"Attempting OpenAPI token request at {url}...")
                 res = session.post(url, json=current_payload, timeout=15)
                 
                 try:
@@ -105,30 +88,14 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
                     )
                     active_omadac_id = result.get("omadacId") or omadac_id
                     if token:
-                        logger.info(f"Successfully obtained OpenAPI access token from Omada Controller using {url}!")
+                        logger.info(f"Successfully obtained OpenAPI access token from Omada Controller!")
                         return token, active_omadac_id, "openapi"
                 else:
                     msg = data.get("msg") or data.get("message")
                     code = data.get("errorCode")
-                    logger.debug(f"OpenAPI attempt at {url} with {list(current_payload.keys())} returned {code}: {msg}")
+                    logger.warning(f"OpenAPI attempt at {url} returned error code {code}: {msg}")
             except Exception as exc:
-                logger.debug(f"OpenAPI connection error at {url}: {exc}")
-
-    # Also test GET method with params (supported in some Omada versions)
-    for url in [f"{base_url}/openapi/v1/token", f"{base_url}/openapi/authorize/token"]:
-        try:
-            params = {"omadacId": omadac_id, "appId": client_id, "secret": client_secret}
-            res = session.get(url, params={k: v for k, v in params.items() if v is not None}, timeout=15)
-            if res.status_code == 200:
-                data = res.json()
-                if data.get("errorCode") == 0:
-                    result = data.get("result", {})
-                    token = result.get("accessToken") or result.get("token")
-                    if token:
-                        logger.info(f"Successfully obtained OpenAPI access token via GET from {url}!")
-                        return token, omadac_id, "openapi"
-        except Exception:
-            pass
+                logger.warning(f"OpenAPI connection error at {url}: {exc}")
 
     return None, omadac_id, None
 
