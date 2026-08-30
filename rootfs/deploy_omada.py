@@ -40,35 +40,65 @@ def get_controller_info(session, base_url):
 
 
 def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=None):
-    """Authenticate with Omada OpenAPI using Client ID (App ID) and Client Secret."""
+    """Authenticate with Omada OpenAPI using Client ID (App ID / Client ID) and Client Secret."""
     logger.info("Authenticating with Omada Controller via OpenAPI Application Client...")
 
     endpoints = []
-    if omadac_id:
-        endpoints.append((f"{base_url}/openapi/v1/token?omadacId={omadac_id}", {"appId": client_id, "secret": client_secret}))
-        endpoints.append((f"{base_url}/openapi/v1/token?omadacId={omadac_id}", {"client_id": client_id, "client_secret": client_secret}))
-        endpoints.append((f"{base_url}/openapi/authorize/token?omadacId={omadac_id}", {"appId": client_id, "secret": client_secret}))
-    endpoints.append((f"{base_url}/openapi/v1/token", {"appId": client_id, "secret": client_secret, "omadacId": omadac_id} if omadac_id else {"appId": client_id, "secret": client_secret}))
-    endpoints.append((f"{base_url}/openapi/v1/token", {"client_id": client_id, "client_secret": client_secret}))
-    endpoints.append((f"{base_url}/openapi/authorize/token", {"appId": client_id, "secret": client_secret}))
+    
+    # Omada Controller OpenAPI standard payload formats
+    payloads = [
+        {"appId": client_id, "secret": client_secret},
+        {"app_id": client_id, "secret": client_secret},
+        {"appId": client_id, "appSecret": client_secret},
+        {"client_id": client_id, "client_secret": client_secret},
+        {"key": client_id, "secret": client_secret}
+    ]
 
-    for url, payload in endpoints:
-        try:
-            logger.info(f"Attempting OpenAPI token request at {url.split('?')[0]}...")
-            res = session.post(url, json=payload, timeout=15)
-            if res.status_code == 200:
-                data = res.json()
+    urls = []
+    if omadac_id:
+        urls.extend([
+            f"{base_url}/openapi/v1/token?omadacId={omadac_id}",
+            f"{base_url}/{omadac_id}/openapi/v1/token",
+            f"{base_url}/openapi/authorize/token?omadacId={omadac_id}",
+            f"{base_url}/{omadac_id}/api/v2/openapi/token",
+            f"{base_url}/api/v2/openapi/token?omadacId={omadac_id}"
+        ])
+    urls.extend([
+        f"{base_url}/openapi/v1/token",
+        f"{base_url}/openapi/authorize/token",
+        f"{base_url}/api/v2/openapi/token"
+    ])
+
+    for url in urls:
+        for payload in payloads:
+            # Also attach omadacId inside body if present
+            current_payload = dict(payload)
+            if omadac_id and "omadacId" not in url:
+                current_payload["omadacId"] = omadac_id
+
+            try:
+                logger.info(f"Attempting OpenAPI token request at {url}...")
+                res = session.post(url, json=current_payload, timeout=15)
+                
+                try:
+                    data = res.json()
+                except Exception:
+                    logger.warning(f"Response from {url} is not JSON (status {res.status_code}): {res.text[:200]}")
+                    continue
+
                 if data.get("errorCode") == 0:
                     result = data.get("result", {})
-                    token = result.get("accessToken") or result.get("token")
+                    token = result.get("accessToken") or result.get("token") or result.get("access_token")
                     active_omadac_id = result.get("omadacId") or omadac_id
                     if token:
                         logger.info("Successfully obtained OpenAPI access token from Omada Controller.")
                         return token, active_omadac_id, "openapi"
                 else:
-                    logger.debug(f"OpenAPI attempt at {url} returned: {data.get('msg')} (code {data.get('errorCode')})")
-        except Exception as exc:
-            logger.debug(f"OpenAPI connection error at {url}: {exc}")
+                    msg = data.get("msg") or data.get("message")
+                    code = data.get("errorCode")
+                    logger.warning(f"OpenAPI attempt at {url} returned error code {code}: {msg}")
+            except Exception as exc:
+                logger.warning(f"OpenAPI connection error at {url}: {exc}")
 
     return None, omadac_id, None
 
@@ -236,10 +266,12 @@ def main():
     session.verify = verify_ssl
 
     logger.info(f"Connecting to Omada Controller at {url}...")
-    if not omadac_id:
-        omadac_id = get_controller_info(session, url)
-        if omadac_id:
-            logger.info(f"Discovered Omada Controller ID: {omadac_id}")
+    discovered_id = get_controller_info(session, url)
+    if discovered_id:
+        logger.info(f"Discovered Omada Controller ID: {discovered_id}")
+        omadac_id = discovered_id
+    elif omadac_id:
+        logger.info(f"Using manually configured Omada Controller ID: {omadac_id}")
 
     token = None
     auth_type = None
