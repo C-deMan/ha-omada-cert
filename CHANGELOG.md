@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.3] - 2026-08-31
+
+### Added
+- **Enhanced Omada Reboot Handling (`cmd/reboot`)**:
+  - Added support for `POST /openapi/v1/{omadacId}/cmd/reboot` and `POST /{omadacId}/api/v2/cmd/reboot`.
+  - Parses and logs the estimated reboot delay returned by the controller (`delay` in seconds).
+  - Explicitly sends `Content-Type: application/json` headers with access token on reboot requests.
+
 ## [1.2.2] - 2026-08-31
 
 ### Fixed

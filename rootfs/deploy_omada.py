@@ -302,30 +302,38 @@ def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes
 
 def reboot_omada_controller(session, base_urls, token, omadac_id):
     """Send reboot command to Omada Controller via OpenAPI."""
-    logger.info("Initiating reboot request on Omada Controller via OpenAPI...")
+    logger.info("Initiating reboot request on Omada Controller...")
     headers_list = [
-        {"Authorization": f"AccessToken={token}"},
-        {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token},
-        {"Authorization": f"Bearer {token}", "accessToken": token}
+        {"Authorization": f"AccessToken={token}", "Content-Type": "application/json"},
+        {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token, "Content-Type": "application/json"},
+        {"Authorization": f"Bearer {token}", "accessToken": token, "Content-Type": "application/json"},
+        {"Csrf-Token": token, "Content-Type": "application/json"}
     ]
 
     reboot_urls = []
     for b_url in base_urls:
         if omadac_id:
             reboot_urls.extend([
+                # OpenAPI endpoints (Port 443 & 8043)
+                f"{b_url}/openapi/v1/{omadac_id}/cmd/reboot",
+                f"{b_url}/{omadac_id}/openapi/v1/cmd/reboot",
                 f"{b_url}/openapi/v1/{omadac_id}/system/reboot",
                 f"{b_url}/{omadac_id}/openapi/v1/system/reboot",
                 f"{b_url}/openapi/v1/{omadac_id}/system/setting/reboot",
                 f"{b_url}/{omadac_id}/openapi/v1/system/setting/reboot",
                 f"{b_url}/openapi/v1/{omadac_id}/maintenance/reboot",
                 f"{b_url}/{omadac_id}/openapi/v1/maintenance/reboot",
-                f"{b_url}/openapi/v1/{omadac_id}/cmd/reboot",
-                f"{b_url}/{omadac_id}/openapi/v1/cmd/reboot"
+                # Web API endpoints (/{omadacId}/api/v2/cmd/reboot)
+                f"{b_url}/{omadac_id}/api/v2/cmd/reboot",
+                f"{b_url}/{omadac_id}/api/v2/maintenance/reboot",
+                f"{b_url}/{omadac_id}/api/v2/system/reboot"
             ])
         reboot_urls.extend([
+            f"{b_url}/openapi/v1/cmd/reboot",
             f"{b_url}/openapi/v1/system/reboot",
             f"{b_url}/openapi/v1/system/setting/reboot",
-            f"{b_url}/openapi/v1/maintenance/reboot"
+            f"{b_url}/openapi/v1/maintenance/reboot",
+            f"{b_url}/api/v2/cmd/reboot"
         ])
 
     seen = set()
@@ -337,9 +345,16 @@ def reboot_omada_controller(session, base_urls, token, omadac_id):
             try:
                 res = session.post(u, headers=headers, json={}, timeout=15)
                 if res.status_code == 200:
-                    data = res.json()
+                    try:
+                        data = res.json()
+                    except Exception:
+                        continue
                     if data.get("errorCode") == 0:
-                        logger.info(f"Omada Controller reboot command successfully accepted via {u}!")
+                        delay = data.get("result", {}).get("delay") or data.get("result")
+                        if delay:
+                            logger.info(f"Controller is rebooting! Estimated time: {delay} seconds (via {u}).")
+                        else:
+                            logger.info(f"Omada Controller reboot command successfully accepted via {u}!")
                         return True
                     else:
                         logger.debug(f"Reboot response at {u}: {data.get('msg')} (code {data.get('errorCode')})")
