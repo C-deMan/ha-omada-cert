@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.3] - 2026-08-31
+
+### Fixed
+- **Certificate Chain & Leaf Upload Optimization**: Ensured the server leaf certificate (`cert.pem`) is prioritized for upload so the controller recognizes the host subject and SANs (`omada.local.cdeman.net`).
+
 ## [1.3.2] - 2026-08-31
 
 ### Added

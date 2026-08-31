@@ -245,7 +245,7 @@ def enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="f
     return False
 
 
-def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes, key_bytes, combined_pem_bytes):
+def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_path, key_path, cert_bytes, key_bytes, combined_pem_bytes):
     """Upload SSL Certificate and Key via official Omada OpenAPI endpoints."""
     headers_list = [
         {"Authorization": f"AccessToken={token}"},
@@ -273,14 +273,22 @@ def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes
     cert_uploaded = False
     key_uploaded = False
 
-    # 1. Upload Certificate (fullchain.pem)
+    # 1. Upload Certificate: Try cert.pem (server leaf certificate) or fullchain.pem
     for c_url in cert_urls:
         for headers in headers_list:
             try:
-                logger.info(f"Uploading SSL Certificate (fullchain.pem) to {c_url}...")
-                files = {"file": ("fullchain.pem", cert_bytes, "application/x-pem-file")}
-                params = {"cerName": "fullchain.pem"}
-                data = {"cerName": "fullchain.pem"}
+                # Prefer leaf cert.pem if exists alongside fullchain, otherwise cert_bytes
+                upload_name = "cert.pem"
+                upload_bytes = cert_bytes
+                cert_leaf_path = cert_path.replace("fullchain.pem", "cert.pem")
+                if os.path.exists(cert_leaf_path):
+                    with open(cert_leaf_path, "rb") as clf:
+                        upload_bytes = clf.read()
+
+                logger.info(f"Uploading SSL Certificate ({upload_name}) to {c_url}...")
+                files = {"file": (upload_name, upload_bytes, "application/x-pem-file")}
+                params = {"cerName": upload_name}
+                data = {"cerName": upload_name}
                 res = session.post(c_url, headers=headers, params=params, data=data, files=files, timeout=30)
                 if res.status_code == 200:
                     res_json = res.json()
@@ -536,7 +544,7 @@ def execute_deployment(cert_path, key_path, options_file, mode="deploy"):
 
     combined_pem_bytes = cert_bytes.rstrip() + b"\n" + key_bytes.lstrip()
 
-    uploaded = upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_bytes, key_bytes, combined_pem_bytes)
+    uploaded = upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_path, key_path, cert_bytes, key_bytes, combined_pem_bytes)
     if uploaded:
         logger.info("Omada SSL certificate and RSA private key uploaded successfully via OpenAPI.")
         return True
