@@ -275,6 +275,10 @@ run_certbot() {
         deploy_certificates
     else
         log_error "Certbot encountered an error while requesting/renewing certificates."
+        if [ -f "$FULLCHAIN_FILE" ] && [ -f "$PRIVKEY_FILE" ]; then
+            log_info "A valid local certificate exists on disk from a previous issuance. Continuing with Omada synchronization..."
+            deploy_certificates
+        fi
     fi
 
     print_cycle_end

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.2] - 2026-08-31
+
+### Fixed
+- **Resilient Fallback to Existing Production Certificate**: If Certbot hits Let's Encrypt duplicate certificate rate limits (5 certs/week) due to rapid re-issuance attempts, the add-on automatically falls back to deploying the valid production certificate already saved on disk to the Omada Controller.
+- Prevented lingering `/data/force_cert_renewal` flag files from causing repeated rate limit triggers.
+
 ## [1.4.1] - 2026-08-31
 
 ### Added

@@ -440,13 +440,6 @@ class IngressHandler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
-            # Create force flag file for background daemon
-            try:
-                with open("/data/force_cert_renewal", "w") as f:
-                    f.write("force\n")
-            except Exception:
-                pass
-
             domains = options.get("domains", [])
             primary_domain = domains[0] if domains else ""
             email = options.get("letsencrypt_email", "")
@@ -465,12 +458,19 @@ class IngressHandler(BaseHTTPRequestHandler):
             )
             success, cert_out = run_command_action(certbot_cmd)
 
+            cert_path = f"/data/letsencrypt/live/{primary_domain}/fullchain.pem"
+            key_path = f"/data/letsencrypt/live/{primary_domain}/privkey.pem"
+
             if success:
-                cert_path = f"/data/letsencrypt/live/{primary_domain}/fullchain.pem"
-                key_path = f"/data/letsencrypt/live/{primary_domain}/privkey.pem"
                 deploy_cmd = f"python3 /deploy_omada.py deploy '{cert_path}' '{key_path}' '{CONFIG_PATH}'"
                 d_success, d_out = run_command_action(deploy_cmd)
                 full_out = f"Certbot Output:\n{cert_out}\n\nOmada Deploy Output:\n{d_out}"
+                self._send_json({"success": d_success, "output": full_out})
+            elif os.path.exists(cert_path) and os.path.exists(key_path):
+                # Fallback to deploying existing certificate on disk
+                deploy_cmd = f"python3 /deploy_omada.py deploy '{cert_path}' '{key_path}' '{CONFIG_PATH}'"
+                d_success, d_out = run_command_action(deploy_cmd)
+                full_out = f"Certbot Notice (rate-limited or skipped):\n{cert_out}\n\nExisting certificate on disk deployed to Omada:\n{d_out}"
                 self._send_json({"success": d_success, "output": full_out})
             else:
                 self._send_json({"success": False, "output": f"Certbot Force Renewal Failed:\n{cert_out}"})
