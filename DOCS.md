@@ -28,7 +28,6 @@ domains:
   - omada.yourdomain.com
 cloudflare_api_token: YOUR_CLOUDFLARE_API_TOKEN
 letsencrypt_email: admin@yourdomain.com
-letsencrypt_staging: false
 copy_to_ha_ssl: true
 ssl_subdir: omada
 timezone: ""
@@ -50,7 +49,6 @@ omada:
 | `domains` | list | **Yes** | List of domain names to include in the certificate (e.g. `omada.example.com`, `*.example.com`). |
 | `cloudflare_api_token` | string | **Yes** | Cloudflare API Token with `Zone:DNS:Edit` permission. |
 | `letsencrypt_email` | string | **Yes** | Email address for Let's Encrypt registration and expiry notifications. |
-| `letsencrypt_staging` | boolean | No | Set to `true` to test certificate generation against Let's Encrypt staging servers without hitting rate limits. |
 | `copy_to_ha_ssl` | boolean | No | Copies the certificate files to `/ssl/` on Home Assistant (default: `true`). |
 | `ssl_subdir` | string | No | Subdirectory inside `/ssl/` to store the certificates to prevent overwriting Home Assistant's default certificates (default: `omada`). |
 | `timezone` | string | No | Custom timezone (e.g., `Europe/Amsterdam`). If left blank, automatically detected from Home Assistant. |

@@ -1,5 +1,9 @@
 # Changelog
+## [1.4.0] - 2026-08-31
 
+### Changed
+- **Direct Production Mode Default**: Completely removed the staging argument and options. All requests and renewals now explicitly and solely target the official Let's Encrypt Production ACME directory (`https://acme-v02.api.letsencrypt.org/directory`), ensuring certificates are always issued by trusted public CAs with full SAN recognition.
+- Automatically replaces any existing staging certificates on the next check or on clicking **⚡ Force Renew Certificate Now**.
 ## [1.3.5] - 2026-08-31
 
 ### Added

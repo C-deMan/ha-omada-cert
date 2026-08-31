@@ -134,7 +134,6 @@ fi
 # Read options using jq
 CLOUDFLARE_API_TOKEN=$(jq --raw-output '.cloudflare_api_token // empty' "$CONFIG_PATH")
 LETSENCRYPT_EMAIL=$(jq --raw-output '.letsencrypt_email // empty' "$CONFIG_PATH")
-LETSENCRYPT_STAGING=$(jq --raw-output '.letsencrypt_staging // false' "$CONFIG_PATH")
 RENEW_INTERVAL_HOURS=$(jq --raw-output '.renew_interval_hours // 12' "$CONFIG_PATH")
 COPY_TO_HA_SSL=$(jq --raw-output '.copy_to_ha_ssl // true' "$CONFIG_PATH")
 SSL_SUBDIR=$(jq --raw-output '.ssl_subdir // "omada"' "$CONFIG_PATH")
@@ -231,6 +230,7 @@ run_certbot() {
         "--config-dir" "/data/letsencrypt"
         "--work-dir" "/data/letsencrypt-work"
         "--logs-dir" "/data/letsencrypt-log"
+        "--server" "https://acme-v02.api.letsencrypt.org/directory"
         "--dns-cloudflare"
         "--dns-cloudflare-credentials" "$CF_CREDS_FILE"
         "--dns-cloudflare-propagation-seconds" "30"
@@ -258,24 +258,17 @@ run_certbot() {
         fi
     fi
 
-    # Check if switching between Staging and Production environment
+    # If existing certificate is from Staging/Fake CA, force renewal to official Production CA
     if [ -f "$FULLCHAIN_FILE" ]; then
         local current_issuer
         current_issuer=$(openssl x509 -in "$FULLCHAIN_FILE" -issuer -noout 2>/dev/null || echo "")
-        if [ "$LETSENCRYPT_STAGING" = "false" ] || [ -z "$LETSENCRYPT_STAGING" ]; then
-            if echo "$current_issuer" | grep -iq "STAGING\|Fake LE"; then
-                log_warn "Existing certificate is a Let's Encrypt Staging test certificate. Switching to Production Let's Encrypt CA... forcing renewal!"
-                CERTBOT_FLAGS+=("--force-renewal")
-            fi
+        if echo "$current_issuer" | grep -iq "STAGING\|Fake LE"; then
+            log_warn "Existing certificate is a Let's Encrypt Staging test certificate ($current_issuer). Upgrading to Production Let's Encrypt CA... forcing renewal!"
+            CERTBOT_FLAGS+=("--force-renewal")
         fi
     fi
 
-    if [ "$LETSENCRYPT_STAGING" = "true" ]; then
-        log_info "Using Let's Encrypt Staging Environment (TESTING MODE - untrusted CA)."
-        CERTBOT_FLAGS+=("--staging")
-    else
-        log_info "Using Let's Encrypt Production Environment (LIVE MODE - browser trusted CA)."
-    fi
+    log_info "Using official Let's Encrypt Production ACME Server (https://acme-v02.api.letsencrypt.org/directory)."
 
     if certbot "${CERTBOT_FLAGS[@]}" "${DOMAIN_ARGS[@]}"; then
         log_info "Certbot execution completed successfully."

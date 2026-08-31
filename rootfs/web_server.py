@@ -451,18 +451,17 @@ class IngressHandler(BaseHTTPRequestHandler):
             primary_domain = domains[0] if domains else ""
             email = options.get("letsencrypt_email", "")
             cf_token = options.get("cloudflare_api_token", "")
-            staging = options.get("letsencrypt_staging", False)
 
             cf_ini = "/data/letsencrypt/cloudflare.ini"
             domain_args = " ".join([f"-d {d}" for d in domains])
-            staging_arg = "--staging" if staging else ""
 
-            # Run certbot with --force-renewal directly
+            # Run certbot with official Let's Encrypt Production server & --force-renewal
             certbot_cmd = (
                 f"certbot certonly --config-dir /data/letsencrypt --work-dir /data/letsencrypt-work "
-                f"--logs-dir /data/letsencrypt-log --dns-cloudflare --dns-cloudflare-credentials '{cf_ini}' "
+                f"--logs-dir /data/letsencrypt-log --server https://acme-v02.api.letsencrypt.org/directory "
+                f"--dns-cloudflare --dns-cloudflare-credentials '{cf_ini}' "
                 f"--dns-cloudflare-propagation-seconds 30 --non-interactive --agree-tos --email '{email}' "
-                f"--cert-name '{primary_domain}' --key-type rsa --rsa-key-size 2048 --force-renewal {staging_arg} {domain_args}"
+                f"--cert-name '{primary_domain}' --key-type rsa --rsa-key-size 2048 --force-renewal {domain_args}"
             )
             success, cert_out = run_command_action(certbot_cmd)
 

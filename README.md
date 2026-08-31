@@ -40,7 +40,6 @@ domains:
   - "omada.yourdomain.com"
 cloudflare_api_token: "your_cloudflare_dns_edit_api_token"
 letsencrypt_email: "admin@yourdomain.com"
-letsencrypt_staging: false
 copy_to_ha_ssl: true
 ssl_subdir: "omada"
 schedule_frequency: "daily"
