@@ -1,0 +1,33 @@
+[MAIN]
+py-version = 3.12
+jobs = 0
+
+[MESSAGES CONTROL]
+disable =
+    raw-checker-failed,
+    bad-inline-option,
+    locally-disabled,
+    file-ignored,
+    suppressed-message,
+    useless-suppression,
+    deprecated-pragma,
+    use-symbolic-message-instead,
+    logging-fstring-interpolation,
+    broad-exception-caught,
+    too-many-locals,
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-branches,
+    too-many-statements,
+    too-many-nested-blocks,
+    too-many-return-statements,
+    unspecified-encoding,
+    line-too-long,
+    missing-function-docstring,
+    missing-class-docstring,
+    invalid-name,
+    global-statement,
+    subprocess-run-check
+
+[FORMAT]
+max-line-length = 160

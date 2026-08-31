@@ -6,7 +6,6 @@ and 'Clear Log File' actions.
 """
 
 import os
-import sys
 import json
 import time
 import subprocess
@@ -452,7 +451,6 @@ class IngressHandler(BaseHTTPRequestHandler):
             domains = options.get("domains", [])
             primary_domain = domains[0] if domains else ""
             email = options.get("letsencrypt_email", "")
-            cf_token = options.get("cloudflare_api_token", "")
 
             cf_ini = "/data/letsencrypt/cloudflare.ini"
             domain_args = " ".join([f"-d {d}" for d in domains])

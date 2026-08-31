@@ -215,14 +215,13 @@ def enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="c
                             if data.get("errorCode") == 0:
                                 logger.info(f"Custom certificate successfully committed & applied via [{mname} {u}] -> {payload}!")
                                 return True
-                            else:
-                                logger.debug(f"Apply response at {u} ({mname}): {data.get('msg')} (code {data.get('errorCode')})")
+                            logger.debug(f"Apply response at {u} ({mname}): {data.get('msg')} (code {data.get('errorCode')})")
                     except Exception as exc:
                         logger.debug(f"Exception enabling certificate at {u}: {exc}")
     return False
 
 
-def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_path, key_path, cert_bytes, key_bytes, combined_pem_bytes):
+def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_path, _key_path, cert_bytes, key_bytes, combined_pem_bytes):
     """Upload SSL Certificate and Private Key via Omada OpenAPI."""
     headers = {"Authorization": f"AccessToken={token}"}
 
@@ -253,8 +252,7 @@ def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_path,
                     logger.info(f"SSL Certificate successfully uploaded via [POST {c_url}]!")
                     cert_uploaded = True
                     break
-                else:
-                    logger.debug(f"Certificate response at {c_url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+                logger.debug(f"Certificate response at {c_url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
         except Exception as exc:
             logger.debug(f"Exception uploading certificate to {c_url}: {exc}")
 
@@ -272,8 +270,7 @@ def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_path,
                     logger.info(f"RSA Private Key successfully uploaded via [POST {k_url}]!")
                     key_uploaded = True
                     break
-                else:
-                    logger.debug(f"SSL Key response at {k_url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+                logger.debug(f"SSL Key response at {k_url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
         except Exception as exc:
             logger.debug(f"Exception uploading key to {k_url}: {exc}")
 
