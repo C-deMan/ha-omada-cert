@@ -2,7 +2,6 @@
 """
 Deploy SSL certificates to TP-Link Omada Controller (OC200, OC300, and Software Controller)
 using Omada OpenAPI Application Client (Client ID & Client Secret).
-Supports automated PEM certificate installation and scheduled/on-demand controller reboots.
 """
 
 import sys
@@ -90,84 +89,57 @@ def get_controller_info(session, base_url):
                 data = response.json()
                 if data.get("errorCode") == 0 and "result" in data:
                     res = data["result"]
-                    return res.get("omadacId") or res.get("controllerId")
+                    cid = res.get("omadacId") or res.get("controllerId")
+                    if cid:
+                        logger.info(f"Connected to Controller ID [{cid}] via {url}")
+                        return cid
         except Exception as exc:
             logger.debug(f"Could not fetch {url}: {exc}")
     return None
 
 
 def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=None):
-    """Authenticate with Omada OpenAPI according to TP-Link OpenAPI Specification (Client Credentials Mode)."""
+    """Authenticate with Omada OpenAPI using client_credentials grant type."""
     logger.info("Authenticating with Omada Controller via OpenAPI Application Client...")
 
-    # Prioritize port 443 where Omada OpenAPI Interface is hosted
+    # Omada OpenAPI is primarily hosted on port 443; fallback to 8043
     base_urls = []
     if ":443" in base_url:
         base_urls = [base_url, base_url.replace(":443", ":8043")]
     elif ":8043" in base_url:
-        base_urls = [base_url.replace(":8043", ":443"), base_url, base_url.replace(":8043", "")]
+        base_urls = [base_url.replace(":8043", ":443"), base_url]
     else:
         base_urls = [f"{base_url}:443", f"{base_url}:8043", base_url]
 
-    candidate_endpoints = []
+    token_urls = []
     for b_url in base_urls:
-        candidate_endpoints.extend([
-            f"{b_url}/openapi/authorize/token?grant_type=client_credentials",
-            f"{b_url}/openapi/v1/token?grant_type=client_credentials",
-            f"{b_url}/openapi/authorize/token",
-            f"{b_url}/openapi/v1/token"
-        ])
-        if omadac_id:
-            candidate_endpoints.extend([
-                f"{b_url}/openapi/authorize/token?grant_type=client_credentials&omadacId={omadac_id}",
-                f"{b_url}/openapi/authorize/token?grant_type=client_credentials&omadac_id={omadac_id}",
-                f"{b_url}/{omadac_id}/openapi/authorize/token?grant_type=client_credentials",
-                f"{b_url}/{omadac_id}/openapi/v1/token?grant_type=client_credentials"
-            ])
-
-    # De-duplicate endpoints
-    seen = set()
-    primary_urls = []
-    for ep in candidate_endpoints:
-        if ep not in seen:
-            seen.add(ep)
-            primary_urls.append(ep)
+        token_urls.append(f"{b_url}/openapi/authorize/token?grant_type=client_credentials")
 
     payloads = [
         {"omadacId": omadac_id, "client_id": client_id, "client_secret": client_secret},
-        {"omadac_id": omadac_id, "client_id": client_id, "client_secret": client_secret},
-        {"omadacId": omadac_id, "appId": client_id, "secret": client_secret},
-        {"omadacId": omadac_id, "appKey": client_id, "appSecret": client_secret},
-        {"client_id": client_id, "client_secret": client_secret, "grant_type": "client_credentials"},
-        {"client_id": client_id, "client_secret": client_secret},
-        {"appId": client_id, "secret": client_secret}
+        {"client_id": client_id, "client_secret": client_secret, "grant_type": "client_credentials"}
     ]
 
-    for url in primary_urls:
+    for url in token_urls:
         for payload in payloads:
             current_payload = {k: v for k, v in payload.items() if v is not None}
             try:
                 res = session.post(url, json=current_payload, timeout=10)
-                try:
+                if res.status_code == 200:
                     data = res.json()
-                except Exception:
-                    continue
-
-                if data.get("errorCode") == 0:
-                    result = data.get("result", {})
-                    token = (
-                        result.get("accessToken")
-                        or result.get("token")
-                        or result.get("access_token")
-                    )
-                    active_omadac_id = result.get("omadacId") or omadac_id
-                    if token:
-                        logger.info(f"Successfully obtained OpenAPI access token from Omada Controller via {url}!")
-                        return token, active_omadac_id
-                else:
-                    msg = data.get("msg") or data.get("message")
-                    code = data.get("errorCode")
-                    logger.debug(f"OpenAPI attempt at {url} returned [{code}]: {msg}")
+                    if data.get("errorCode") == 0:
+                        result = data.get("result", {})
+                        token = (
+                            result.get("accessToken")
+                            or result.get("token")
+                            or result.get("access_token")
+                        )
+                        active_omadac_id = result.get("omadacId") or omadac_id
+                        if token:
+                            logger.info(f"OpenAPI Access Token acquired successfully via [POST {url}]")
+                            return token, active_omadac_id
+                    else:
+                        logger.debug(f"OpenAPI token response at {url}: {data.get('msg')} (code {data.get('errorCode')})")
             except Exception as exc:
                 logger.debug(f"OpenAPI connection error at {url}: {exc}")
 
@@ -175,49 +147,37 @@ def authenticate_openapi(session, base_url, client_id, client_secret, omadac_id=
 
 
 def get_openapi_certificate_info(session, base_urls, token, omadac_id):
-    """Retrieve existing certificate info from Omada OpenAPI."""
+    """Retrieve active certificate details from Omada OpenAPI."""
     if not omadac_id:
         return None
 
     headers = {"Authorization": f"AccessToken={token}"}
     for b_url in base_urls:
-        urls = [
-            f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate",
-            f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate"
-        ]
-        for url in urls:
-            try:
-                res = session.get(url, headers=headers, timeout=10)
-                if res.status_code == 200:
-                    data = res.json()
-                    if data.get("errorCode") == 0:
-                        return data.get("result", {})
-            except Exception as exc:
-                logger.debug(f"Error querying certificate info from {url}: {exc}")
+        url = f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate"
+        try:
+            res = session.get(url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("errorCode") == 0:
+                    result = data.get("result", {})
+                    logger.info(f"Certificate query successful via [GET {url}] -> {result}")
+                    return result
+        except Exception as exc:
+            logger.debug(f"Error querying certificate info from {url}: {exc}")
     return None
 
 
 def enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="fullchain.pem", key_name="privkey.pem", cer_type="PEM"):
-    """Enable the uploaded certificate in Omada controller settings via OpenAPI."""
+    """Enable custom certificate in Omada controller system settings."""
     headers_list = [
         {"Authorization": f"AccessToken={token}", "Content-Type": "application/json"},
-        {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token, "Content-Type": "application/json"},
-        {"Authorization": f"Bearer {token}", "accessToken": token, "Content-Type": "application/json"}
+        {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token, "Content-Type": "application/json"}
     ]
 
     enable_urls = []
     for b_url in base_urls:
         if omadac_id:
-            enable_urls.extend([
-                f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate",
-                f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate",
-                f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate/enable",
-                f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate/enable"
-            ])
-        enable_urls.extend([
-            f"{b_url}/openapi/v1/system/setting/certificate",
-            f"{b_url}/openapi/v1/system/setting/certificate/enable"
-        ])
+            enable_urls.append(f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate")
 
     payloads = [
         {"enable": True, "cerName": cer_name, "keyName": key_name, "cerType": cer_type},
@@ -225,20 +185,16 @@ def enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="f
         {"enable": True}
     ]
 
-    seen = set()
     for u in enable_urls:
-        if u in seen:
-            continue
-        seen.add(u)
         for payload in payloads:
             for headers in headers_list:
-                for method in [session.patch, session.put, session.post]:
+                for method, mname in [(session.patch, "PATCH"), (session.put, "PUT"), (session.post, "POST")]:
                     try:
                         res = method(u, headers=headers, json=payload, timeout=10)
                         if res.status_code == 200:
                             data = res.json()
                             if data.get("errorCode") == 0:
-                                logger.info(f"Successfully enabled custom certificate in Omada settings via {u}!")
+                                logger.info(f"Custom certificate enabled via [{mname} {u}]")
                                 return True
                     except Exception as exc:
                         logger.debug(f"Exception enabling certificate at {u}: {exc}")
@@ -246,185 +202,89 @@ def enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="f
 
 
 def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_path, key_path, cert_bytes, key_bytes, combined_pem_bytes):
-    """Upload SSL Certificate and Key via official Omada OpenAPI endpoints."""
-    headers_list = [
-        {"Authorization": f"AccessToken={token}"},
-        {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token},
-        {"Authorization": f"Bearer {token}", "accessToken": token}
-    ]
+    """Upload SSL Certificate and Private Key via Omada OpenAPI."""
+    headers = {"Authorization": f"AccessToken={token}"}
 
-    existing_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
-    if existing_cert is not None:
-        logger.info(f"Current Omada certificate status before upload: {existing_cert}")
-
-    cert_urls = []
-    key_urls = []
-    for b_url in base_urls:
-        if omadac_id:
-            cert_urls.extend([
-                f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate",
-                f"{b_url}/{omadac_id}/openapi/v1/system/setting/certificate"
-            ])
-            key_urls.extend([
-                f"{b_url}/openapi/v1/{omadac_id}/system/setting/ssl-key",
-                f"{b_url}/{omadac_id}/openapi/v1/system/setting/ssl-key"
-            ])
+    cert_urls = [f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate" for b_url in base_urls if omadac_id]
+    key_urls = [f"{b_url}/openapi/v1/{omadac_id}/system/setting/ssl-key" for b_url in base_urls if omadac_id]
 
     cert_uploaded = False
     key_uploaded = False
 
-    # 1. Upload Certificate: Try cert.pem (server leaf certificate) or fullchain.pem
+    # 1. Upload SSL Certificate (cert.pem / fullchain.pem)
     for c_url in cert_urls:
-        for headers in headers_list:
-            try:
-                # Prefer leaf cert.pem if exists alongside fullchain, otherwise cert_bytes
-                upload_name = "cert.pem"
-                upload_bytes = cert_bytes
-                cert_leaf_path = cert_path.replace("fullchain.pem", "cert.pem")
-                if os.path.exists(cert_leaf_path):
-                    with open(cert_leaf_path, "rb") as clf:
-                        upload_bytes = clf.read()
+        try:
+            upload_name = "cert.pem"
+            upload_bytes = cert_bytes
+            cert_leaf_path = cert_path.replace("fullchain.pem", "cert.pem")
+            if os.path.exists(cert_leaf_path):
+                with open(cert_leaf_path, "rb") as clf:
+                    upload_bytes = clf.read()
 
-                logger.info(f"Uploading SSL Certificate ({upload_name}) to {c_url}...")
-                files = {"file": (upload_name, upload_bytes, "application/x-pem-file")}
-                params = {"cerName": upload_name}
-                data = {"cerName": upload_name}
-                res = session.post(c_url, headers=headers, params=params, data=data, files=files, timeout=30)
-                if res.status_code == 200:
-                    res_json = res.json()
-                    if res_json.get("errorCode") == 0:
-                        logger.info("SSL Certificate successfully uploaded via OpenAPI!")
-                        cert_uploaded = True
-                        break
-                    else:
-                        logger.debug(f"OpenAPI cert response at {c_url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
-            except Exception as exc:
-                logger.debug(f"Exception during OpenAPI cert upload: {exc}")
-        if cert_uploaded:
-            break
+            logger.info(f"Uploading SSL Certificate ({upload_name}) via [POST {c_url}]...")
+            files = {"file": (upload_name, upload_bytes, "application/x-pem-file")}
+            params = {"cerName": upload_name}
+            data = {"cerName": upload_name}
+            res = session.post(c_url, headers=headers, params=params, data=data, files=files, timeout=30)
+            if res.status_code == 200:
+                res_json = res.json()
+                if res_json.get("errorCode") == 0:
+                    logger.info(f"SSL Certificate successfully uploaded via [POST {c_url}]!")
+                    cert_uploaded = True
+                    break
+                else:
+                    logger.debug(f"Certificate response at {c_url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+        except Exception as exc:
+            logger.debug(f"Exception uploading certificate to {c_url}: {exc}")
 
-    # 2. Upload Private Key (privkey.pem)
+    # 2. Upload RSA Private Key (privkey.pem)
     for k_url in key_urls:
-        for headers in headers_list:
-            try:
-                logger.info(f"Uploading SSL Key (privkey.pem) to {k_url}...")
-                files = {"file": ("privkey.pem", key_bytes, "application/x-pem-file")}
-                params = {"keyName": "privkey.pem"}
-                data = {"keyName": "privkey.pem"}
-                res = session.post(k_url, headers=headers, params=params, data=data, files=files, timeout=30)
-                if res.status_code == 200:
-                    res_json = res.json()
-                    if res_json.get("errorCode") == 0:
-                        logger.info("SSL Key successfully uploaded via OpenAPI!")
-                        key_uploaded = True
-                        break
-                    else:
-                        logger.debug(f"OpenAPI key response at {k_url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
-            except Exception as exc:
-                logger.debug(f"Exception during OpenAPI key upload: {exc}")
-        if key_uploaded:
-            break
+        try:
+            logger.info(f"Uploading RSA Private Key (privkey.pem) via [POST {k_url}]...")
+            files = {"file": ("privkey.pem", key_bytes, "application/x-pem-file")}
+            params = {"keyName": "privkey.pem"}
+            data = {"keyName": "privkey.pem"}
+            res = session.post(k_url, headers=headers, params=params, data=data, files=files, timeout=30)
+            if res.status_code == 200:
+                res_json = res.json()
+                if res_json.get("errorCode") == 0:
+                    logger.info(f"RSA Private Key successfully uploaded via [POST {k_url}]!")
+                    key_uploaded = True
+                    break
+                else:
+                    logger.debug(f"SSL Key response at {k_url}: {res_json.get('msg')} (code {res_json.get('errorCode')})")
+        except Exception as exc:
+            logger.debug(f"Exception uploading key to {k_url}: {exc}")
 
     if cert_uploaded and key_uploaded:
-        # Attempt to explicitly set enable=True via API
         enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="fullchain.pem", key_name="privkey.pem", cer_type="PEM")
         time.sleep(1)
         updated_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
         if updated_cert is not None:
-            logger.info(f"Updated Omada certificate status after upload: {updated_cert}")
+            logger.info(f"Omada Certificate Status: {updated_cert}")
         return True
 
-    # Fallback to combined pem bundle
+    # Fallback to combined bundle if separate endpoints failed
     for c_url in cert_urls:
-        for headers in headers_list:
-            try:
-                logger.info(f"Uploading combined certificate bundle to {c_url}...")
-                files = {"file": ("omada_cert.pem", combined_pem_bytes, "application/x-pem-file")}
-                params = {"cerName": "omada_cert.pem"}
-                data = {"cerName": "omada_cert.pem"}
-                res = session.post(c_url, headers=headers, params=params, data=data, files=files, timeout=30)
-                if res.status_code == 200:
-                    res_json = res.json()
-                    if res_json.get("errorCode") == 0:
-                        logger.info("Combined certificate bundle uploaded via OpenAPI!")
-                        enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="omada_cert.pem", cer_type="PEM")
-                        time.sleep(1)
-                        updated_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
-                        if updated_cert is not None:
-                            logger.info(f"Updated Omada certificate status: {updated_cert}")
-                        return True
-            except Exception as exc:
-                logger.debug(f"Exception during OpenAPI bundle upload: {exc}")
+        try:
+            logger.info(f"Uploading combined certificate bundle via [POST {c_url}]...")
+            files = {"file": ("omada_cert.pem", combined_pem_bytes, "application/x-pem-file")}
+            params = {"cerName": "omada_cert.pem"}
+            data = {"cerName": "omada_cert.pem"}
+            res = session.post(c_url, headers=headers, params=params, data=data, files=files, timeout=30)
+            if res.status_code == 200:
+                res_json = res.json()
+                if res_json.get("errorCode") == 0:
+                    logger.info(f"Combined certificate bundle uploaded via [POST {c_url}]!")
+                    enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="omada_cert.pem", cer_type="PEM")
+                    return True
+        except Exception as exc:
+            logger.debug(f"Exception during bundle upload: {exc}")
 
     return False
 
 
-def reboot_omada_controller(session, base_urls, token, omadac_id):
-    """Send reboot command to Omada Controller via OpenAPI."""
-    logger.info("Initiating reboot request on Omada Controller...")
-    headers_list = [
-        {"Authorization": f"AccessToken={token}", "Content-Type": "application/json"},
-        {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token, "Content-Type": "application/json"},
-        {"Authorization": f"Bearer {token}", "accessToken": token, "Content-Type": "application/json"},
-        {"Csrf-Token": token, "Content-Type": "application/json"}
-    ]
-
-    reboot_urls = []
-    for b_url in base_urls:
-        if omadac_id:
-            reboot_urls.extend([
-                # OpenAPI endpoints (Port 443 & 8043)
-                f"{b_url}/openapi/v1/{omadac_id}/cmd/reboot",
-                f"{b_url}/{omadac_id}/openapi/v1/cmd/reboot",
-                f"{b_url}/openapi/v1/{omadac_id}/system/reboot",
-                f"{b_url}/{omadac_id}/openapi/v1/system/reboot",
-                f"{b_url}/openapi/v1/{omadac_id}/system/setting/reboot",
-                f"{b_url}/{omadac_id}/openapi/v1/system/setting/reboot",
-                f"{b_url}/openapi/v1/{omadac_id}/maintenance/reboot",
-                f"{b_url}/{omadac_id}/openapi/v1/maintenance/reboot",
-                # Web API endpoints (/{omadacId}/api/v2/cmd/reboot)
-                f"{b_url}/{omadac_id}/api/v2/cmd/reboot",
-                f"{b_url}/{omadac_id}/api/v2/maintenance/reboot",
-                f"{b_url}/{omadac_id}/api/v2/system/reboot"
-            ])
-        reboot_urls.extend([
-            f"{b_url}/openapi/v1/cmd/reboot",
-            f"{b_url}/openapi/v1/system/reboot",
-            f"{b_url}/openapi/v1/system/setting/reboot",
-            f"{b_url}/openapi/v1/maintenance/reboot",
-            f"{b_url}/api/v2/cmd/reboot"
-        ])
-
-    seen = set()
-    for u in reboot_urls:
-        if u in seen:
-            continue
-        seen.add(u)
-        for headers in headers_list:
-            try:
-                res = session.post(u, headers=headers, json={}, timeout=15)
-                if res.status_code == 200:
-                    try:
-                        data = res.json()
-                    except Exception:
-                        continue
-                    if data.get("errorCode") == 0:
-                        delay = data.get("result", {}).get("delay") or data.get("result")
-                        if delay:
-                            logger.info(f"Controller is rebooting! Estimated time: {delay} seconds (via {u}).")
-                        else:
-                            logger.info(f"Omada Controller reboot command successfully accepted via {u}!")
-                        return True
-                    else:
-                        logger.debug(f"Reboot response at {u}: {data.get('msg')} (code {data.get('errorCode')})")
-            except Exception as exc:
-                logger.debug(f"Exception during reboot request at {u}: {exc}")
-
-    logger.warning("Reboot command sent to available OpenAPI endpoints. (If hardware OC200/OC300 requires manual restart, please use the Controller Web UI).")
-    return True
-
-
-def execute_deployment(cert_path, key_path, options_file, mode="deploy"):
+def execute_deployment(cert_path, key_path, options_file):
     options = {}
     if os.path.exists(options_file):
         try:
@@ -467,29 +327,24 @@ def execute_deployment(cert_path, key_path, options_file, mode="deploy"):
     host = parsed_url.hostname or url.replace("https://", "").replace("http://", "").split(":")[0]
     port = parsed_url.port or (8043 if ":8043" in url else (443 if ":443" in url else 8043))
 
-    # Base URLs for OpenAPI
     base_urls = []
     if ":443" in url:
         base_urls = [url, url.replace(":443", ":8043")]
     elif ":8043" in url:
-        base_urls = [url.replace(":8043", ":443"), url, url.replace(":8043", "")]
+        base_urls = [url.replace(":8043", ":443"), url]
     else:
         base_urls = [f"{url}:443", f"{url}:8043", url]
 
     discovered_id = get_controller_info(session, url)
     if discovered_id:
-        logger.info(f"Discovered Omada Controller ID: {discovered_id}")
         omadac_id = discovered_id
     elif omadac_id:
-        logger.info(f"Using manually configured Omada Controller ID: {omadac_id}")
+        logger.info(f"Using configured Controller ID: {omadac_id}")
 
     token, omadac_id = authenticate_openapi(session, url, client_id, client_secret, omadac_id)
     if not token:
         logger.error("Failed to authenticate with Omada OpenAPI. Please check client_id and client_secret.")
         return False
-
-    if mode == "reboot":
-        return reboot_omada_controller(session, base_urls, token, omadac_id)
 
     if not os.path.exists(cert_path) or not os.path.exists(key_path):
         logger.error(f"Certificate files not found: {cert_path}, {key_path}")
@@ -512,12 +367,11 @@ def execute_deployment(cert_path, key_path, options_file, mode="deploy"):
     for p in ports_to_check:
         live_cert = get_live_tls_cert_details(host, p)
         if live_cert:
-            logger.info(f"Omada Controller Live TLS Certificate (port {p}): Subject={live_cert.get('subject')}, Expires={live_cert.get('notafter')}")
+            logger.info(f"Omada Live TLS Certificate (port {p}): Subject={live_cert.get('subject')}, Expires={live_cert.get('notafter')}")
             break
 
     existing_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
     if existing_cert is not None:
-        logger.info(f"Omada Controller Setting Status: {existing_cert}")
         if live_cert and local_fp and live_cert.get("sha256 fingerprint") == local_fp and existing_cert.get("enable") is True:
             logger.info("Omada Controller is already active with the valid, matching certificate. No update required.")
             return True
@@ -555,22 +409,20 @@ def execute_deployment(cert_path, key_path, options_file, mode="deploy"):
 
 def main():
     if len(sys.argv) < 2:
-        logger.error("Usage: deploy_omada.py [deploy|reboot|check] [cert_path] [key_path] [options_json_path]")
+        logger.error("Usage: deploy_omada.py [deploy|check] [cert_path] [key_path] [options_json_path]")
         sys.exit(1)
 
     first_arg = sys.argv[1]
-    if first_arg in ["deploy", "reboot", "check"]:
-        mode = first_arg
+    if first_arg in ["deploy", "check"]:
         cert_path = sys.argv[2] if len(sys.argv) > 2 else ""
         key_path = sys.argv[3] if len(sys.argv) > 3 else ""
         options_file = sys.argv[4] if len(sys.argv) > 4 else "/data/options.json"
     else:
-        mode = "deploy"
         cert_path = sys.argv[1]
         key_path = sys.argv[2] if len(sys.argv) > 2 else ""
         options_file = sys.argv[3] if len(sys.argv) > 3 else "/data/options.json"
 
-    success = execute_deployment(cert_path, key_path, options_file, mode=mode)
+    success = execute_deployment(cert_path, key_path, options_file)
     if not success:
         sys.exit(1)
 

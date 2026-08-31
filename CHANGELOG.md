@@ -1,4 +1,11 @@
 # Changelog
+
+## [1.4.1] - 2026-08-31
+
+### Added
+- **Custom Add-on Branding & Icons**: Added custom `icon.png` and `logo.png` representing SSL encryption, Cloudflare, and TP-Link Omada networking for the Home Assistant Add-on store and dashboard.
+- **Cleaned deploy_omada.py**: Streamlined API interaction to only verified OpenAPI endpoints on port 443, added explicit logging of the exact working URL on each step, and removed all reboot references.
+
 ## [1.4.0] - 2026-08-31
 
 ### Changed
