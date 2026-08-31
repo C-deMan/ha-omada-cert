@@ -222,6 +222,7 @@ run_certbot() {
     log_info "Checking / Renewing certificates with Certbot (2048-bit RSA)..."
 
     CERT_DIR="/data/letsencrypt/live/${PRIMARY_DOMAIN}"
+    FULLCHAIN_FILE="${CERT_DIR}/fullchain.pem"
     PRIVKEY_FILE="${CERT_DIR}/privkey.pem"
 
     CERTBOT_FLAGS=(
@@ -250,9 +251,23 @@ run_certbot() {
         fi
     fi
 
+    # Check if switching between Staging and Production environment
+    if [ -f "$FULLCHAIN_FILE" ]; then
+        local current_issuer
+        current_issuer=$(openssl x509 -in "$FULLCHAIN_FILE" -issuer -noout 2>/dev/null || echo "")
+        if [ "$LETSENCRYPT_STAGING" = "false" ] || [ -z "$LETSENCRYPT_STAGING" ]; then
+            if echo "$current_issuer" | grep -iq "STAGING\|Fake LE"; then
+                log_warn "Existing certificate is a Let's Encrypt Staging test certificate. Switching to Production Let's Encrypt CA... forcing renewal!"
+                CERTBOT_FLAGS+=("--force-renewal")
+            fi
+        fi
+    fi
+
     if [ "$LETSENCRYPT_STAGING" = "true" ]; then
-        log_info "Using Let's Encrypt Staging Environment (for testing)."
+        log_info "Using Let's Encrypt Staging Environment (TESTING MODE - untrusted CA)."
         CERTBOT_FLAGS+=("--staging")
+    else
+        log_info "Using Let's Encrypt Production Environment (LIVE MODE - browser trusted CA)."
     fi
 
     if certbot "${CERTBOT_FLAGS[@]}" "${DOMAIN_ARGS[@]}"; then

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.4] - 2026-08-31
+
+### Added
+- **Automatic Staging to Production Transition**: Added automatic certificate issuer inspection. When `letsencrypt_staging: false` (production default), the add-on automatically detects if any previous staging/test certificates exist in `/data/letsencrypt` and forces an immediate renewal against Let's Encrypt's official Production ACME directory (`https://acme-v02.api.letsencrypt.org/directory`), obtaining a real browser-trusted certificate.
+
 ## [1.3.3] - 2026-08-31
 
 ### Fixed
