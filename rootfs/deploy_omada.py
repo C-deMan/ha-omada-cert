@@ -167,8 +167,11 @@ def get_openapi_certificate_info(session, base_urls, token, omadac_id):
     return None
 
 
-def enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="fullchain.pem", key_name="privkey.pem", cer_type="PEM"):
-    """Enable custom certificate in Omada controller system settings."""
+def enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="cert.pem", key_name="privkey.pem", cer_type="PEM", cer_id=None, key_id=None):
+    """
+    Commit and apply the certificate in Omada controller settings (equivalent to pressing 'Save' in the Web UI).
+    """
+    logger.info("Committing and applying SSL certificate settings in Omada Controller...")
     headers_list = [
         {"Authorization": f"AccessToken={token}", "Content-Type": "application/json"},
         {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token, "Content-Type": "application/json"}
@@ -177,13 +180,29 @@ def enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="f
     enable_urls = []
     for b_url in base_urls:
         if omadac_id:
-            enable_urls.append(f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate")
+            enable_urls.extend([
+                f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate",
+                f"{b_url}/openapi/v1/{omadac_id}/system/setting/ssl",
+                f"{b_url}/openapi/v1/{omadac_id}/system/setting/customcert",
+                f"{b_url}/openapi/v1/{omadac_id}/system/setting/certificate/enable",
+                f"{b_url}/openapi/v1/{omadac_id}/cmd/apply-certificate"
+            ])
 
-    payloads = [
+    payloads = []
+    if cer_id and key_id:
+        payloads.append({
+            "enable": True,
+            "cerId": cer_id,
+            "keyId": key_id,
+            "cerName": cer_name,
+            "keyName": key_name,
+            "cerType": cer_type
+        })
+    payloads.extend([
         {"enable": True, "cerName": cer_name, "keyName": key_name, "cerType": cer_type},
         {"enable": True, "cerType": cer_type},
         {"enable": True}
-    ]
+    ])
 
     for u in enable_urls:
         for payload in payloads:
@@ -194,7 +213,7 @@ def enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="f
                         if res.status_code == 200:
                             data = res.json()
                             if data.get("errorCode") == 0:
-                                logger.info(f"Custom certificate enabled via [{mname} {u}]")
+                                logger.info(f"Custom certificate successfully committed & applied via [{mname} {u}] -> {payload}!")
                                 return True
                     except Exception as exc:
                         logger.debug(f"Exception enabling certificate at {u}: {exc}")
@@ -257,11 +276,21 @@ def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_path,
             logger.debug(f"Exception uploading key to {k_url}: {exc}")
 
     if cert_uploaded and key_uploaded:
-        enable_openapi_certificate(session, base_urls, token, omadac_id, cer_name="fullchain.pem", key_name="privkey.pem", cer_type="PEM")
+        # Fetch newly created cerId & keyId to commit exact configuration
+        time.sleep(1)
+        staged_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
+        cer_id = staged_cert.get("cerId") if staged_cert else None
+        key_id = staged_cert.get("keyId") if staged_cert else None
+        
+        enable_openapi_certificate(
+            session, base_urls, token, omadac_id,
+            cer_name="cert.pem", key_name="privkey.pem", cer_type="PEM",
+            cer_id=cer_id, key_id=key_id
+        )
         time.sleep(1)
         updated_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
         if updated_cert is not None:
-            logger.info(f"Omada Certificate Status: {updated_cert}")
+            logger.info(f"Final Omada Certificate Status: {updated_cert}")
         return True
 
     # Fallback to combined bundle if separate endpoints failed

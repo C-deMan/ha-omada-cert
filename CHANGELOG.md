@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.4.4] - 2026-08-31
+
+### Added
+- **Automated Certificate Commit & Apply**: When uploading the certificate and key files, the add-on now queries the newly created `cerId` & `keyId` and executes the commit setting request (`PUT/PATCH /system/setting/certificate` with `enable: true`, `cerId`, `keyId`, `cerType: PEM`). This programmatically replicates pressing the **Save** button in the Web UI, activating the certificate immediately without requiring a full reboot.
+
 ## [1.4.3] - 2026-08-31
 
 ### Added
