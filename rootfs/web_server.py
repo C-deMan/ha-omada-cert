@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Lightweight Ingress Web UI for Home Assistant: Omada & Cloudflare SSL Manager
-Provides live status, 'Check & Sync Now', and 'Reboot Omada Controller Now' actions.
+Provides live certificate status, 'Check & Sync Now', 'Force Renew Certificate Now',
+and 'Clear Log File' actions.
 """
 
 import os
@@ -324,7 +325,7 @@ class IngressHandler(BaseHTTPRequestHandler):
                 </div>
                 <div class="item">
                     <div class="item-label">Key & Format</div>
-                    <div class="item-value">Unencrypted RSA PEM (/certificate & /ssl-key)</div>
+                    <div class="item-value">RSA PEM (/certificate & /ssl-key)</div>
                 </div>
             </div>
         </div>
@@ -335,9 +336,6 @@ class IngressHandler(BaseHTTPRequestHandler):
             </button>
             <button id="btnForce" class="btn btn-danger" onclick="triggerAction('force_renew')">
                 ⚡ Force Renew Certificate Now
-            </button>
-            <button id="btnReboot" class="btn btn-danger" onclick="triggerAction('reboot')">
-                ⚡ Reboot Omada Controller
             </button>
             <button id="btnClear" class="btn btn-muted" onclick="triggerAction('clear_logs')">
                 🧹 Clear Log File
@@ -376,7 +374,6 @@ class IngressHandler(BaseHTTPRequestHandler):
         async function triggerAction(action) {{
             const btnCheck = document.getElementById("btnCheck");
             const btnForce = document.getElementById("btnForce");
-            const btnReboot = document.getElementById("btnReboot");
             const btnClear = document.getElementById("btnClear");
             const chkForce = document.getElementById("chkForceUpload");
             const output = document.getElementById("output");
@@ -389,7 +386,6 @@ class IngressHandler(BaseHTTPRequestHandler):
 
             if (btnCheck) btnCheck.disabled = true;
             if (btnForce) btnForce.disabled = true;
-            if (btnReboot) btnReboot.disabled = true;
             if (btnClear) btnClear.disabled = true;
             output.innerText = "Executing " + targetAction + "... please wait...";
 
@@ -406,7 +402,6 @@ class IngressHandler(BaseHTTPRequestHandler):
             }} finally {{
                 if (btnCheck) btnCheck.disabled = false;
                 if (btnForce) btnForce.disabled = false;
-                if (btnReboot) btnReboot.disabled = false;
                 if (btnClear) btnClear.disabled = false;
             }}
         }}
@@ -433,12 +428,6 @@ class IngressHandler(BaseHTTPRequestHandler):
             key_path = f"/data/letsencrypt/live/{primary_domain}/privkey.pem"
 
             cmd = f"python3 /deploy_omada.py deploy '{cert_path}' '{key_path}' '{CONFIG_PATH}'"
-            success, out = run_command_action(cmd)
-            self._send_json({"success": success, "output": out})
-            return
-
-        if path.endswith("/api/reboot"):
-            cmd = f"python3 /deploy_omada.py reboot '' '' '{CONFIG_PATH}'"
             success, out = run_command_action(cmd)
             self._send_json({"success": success, "output": out})
             return

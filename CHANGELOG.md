@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.6] - 2026-08-31
+
+### Changed
+- **Removed Reboot Mechanisms**: Completely removed all controller reboot endpoints, commands, and UI buttons across the add-on scripts, web dashboard, and documentation.
+- **Wording Cleanup**: Updated text references from "Unencrypted RSA" to standard "RSA PEM".
+
 ## [1.4.5] - 2026-08-31
 
 ### Fixed

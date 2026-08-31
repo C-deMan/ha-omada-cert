@@ -10,7 +10,7 @@ A Home Assistant Supervisor Add-on to automatically generate, renew, and deploy 
 ## Highlights
 
 - **DNS-01 Challenge**: No open ports (80/443) or port forwarding needed. Supports wildcard certificates (`*.yourdomain.com`).
-- **2048-bit RSA Encryption**: Automatic generation of standard unencrypted RSA certificates compatible with TP-Link Omada Controllers.
+- **2048-bit RSA Encryption**: Automatic generation of standard RSA certificates compatible with TP-Link Omada Controllers.
 - **Official Omada OpenAPI Integration**: Uploads certificates directly to your TP-Link Omada Controller (OC200, OC300, or Software Controller) using secure Application Client credentials (Client ID & Client Secret).
 - **Interactive Ingress Web Dashboard**: Live web UI within Home Assistant with manual **Check & Sync Certificate** and **Clear Log File** actions.
 - **Configurable Schedule Frequency**: Schedule checks `every day` (daily), `weekly`, or `monthly` at your chosen time.

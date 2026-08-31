@@ -250,10 +250,10 @@ run_certbot() {
         rm -f "/data/force_cert_renewal"
     fi
 
-    # If an existing key exists but is not an unencrypted RSA key (e.g. default ECDSA), force renewal to RSA
+    # If an existing key exists but is not an RSA key (e.g. default ECDSA), force renewal to RSA
     if [ -f "$PRIVKEY_FILE" ]; then
         if ! openssl rsa -in "$PRIVKEY_FILE" -check -noout >/dev/null 2>&1; then
-            log_warn "Existing certificate is not an unencrypted RSA key (Omada requires unencrypted RSA). Forcing renewal with 2048-bit RSA..."
+            log_warn "Existing certificate is not an RSA key (Omada requires standard RSA). Forcing renewal with 2048-bit RSA..."
             CERTBOT_FLAGS+=("--force-renewal")
         fi
     fi
