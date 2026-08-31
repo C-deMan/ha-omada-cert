@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.8] - 2026-08-31
+
+### Changed
+- **Schema Option Cleanup**: Removed the redundant `"every day"` option from `schedule_frequency`, leaving the clean choices: `daily`, `weekly`, `monthly`.
+- Updated documentation and scripts to reflect the clean schedule options.
+
 ## [1.4.7] - 2026-08-31
 
 ### Added

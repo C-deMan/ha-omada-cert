@@ -13,7 +13,7 @@ A Home Assistant Supervisor Add-on to automatically generate, renew, and deploy 
 - **2048-bit RSA Encryption**: Automatic generation of standard RSA certificates compatible with TP-Link Omada Controllers.
 - **Official Omada OpenAPI Integration**: Uploads certificates directly to your TP-Link Omada Controller (OC200, OC300, or Software Controller) using secure Application Client credentials (Client ID & Client Secret).
 - **Interactive Ingress Web Dashboard**: Live web UI within Home Assistant with manual **Check & Sync Certificate** and **Clear Log File** actions.
-- **Configurable Schedule Frequency**: Schedule checks `every day` (daily), `weekly`, or `monthly` at your chosen time.
+- **Configurable Schedule Frequency**: Schedule checks `daily`, `weekly`, or `monthly` at your chosen time.
 - **Home Assistant `/ssl` Export**: Copies the certificates to Home Assistant's `/ssl/omada` folder for HA Core or other add-ons.
 
 ---

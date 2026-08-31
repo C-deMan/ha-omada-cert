@@ -287,7 +287,7 @@ run_certbot() {
 # Initial certificate run on startup/restart
 run_certbot
 
-# Scheduled check loop: Supports every day / daily, weekly, monthly
+# Scheduled check loop: Supports daily, weekly, monthly
 SCHEDULE_FREQ=$(jq --raw-output '.schedule_frequency // "daily"' "$CONFIG_PATH" 2>/dev/null | tr '[:upper:]' '[:lower:]')
 SCHEDULE_TIME=$(jq --raw-output '.schedule_time // "03:00"' "$CONFIG_PATH" 2>/dev/null)
 
@@ -310,7 +310,7 @@ while true; do
     SHOULD_RUN=false
     if [ "$TIME_MATCH" = "true" ] && [ "$LAST_SCHEDULED_RUN" != "$CURRENT_SLOT" ]; then
         case "$SCHEDULE_FREQ" in
-            "every day"|"daily")
+            "daily")
                 SHOULD_RUN=true
                 ;;
             "weekly")

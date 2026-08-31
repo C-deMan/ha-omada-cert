@@ -1,5 +1,5 @@
 name: "Omada & Cloudflare SSL Certificate Manager"
-version: "1.4.7"
+version: "1.4.8"
 slug: "omada_cloudflare_ssl"
 description: "Automatically issue and renew Let's Encrypt certificates via Cloudflare DNS-01 and deploy them to TP-Link Omada Controller and Home Assistant."
 url: "https://github.com/C-deMan/ha-omada-cert"
@@ -44,7 +44,7 @@ schema:
   copy_to_ha_ssl: bool?
   ssl_subdir: str?
   timezone: str?
-  schedule_frequency: list(every day|daily|weekly|monthly)?
+  schedule_frequency: list(daily|weekly|monthly)?
   schedule_time: str?
   omada:
     enabled: bool

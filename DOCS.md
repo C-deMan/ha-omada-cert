@@ -52,7 +52,7 @@ omada:
 | `copy_to_ha_ssl` | boolean | No | Copies the certificate files to `/ssl/` on Home Assistant (default: `true`). |
 | `ssl_subdir` | string | No | Subdirectory inside `/ssl/` to store the certificates to prevent overwriting Home Assistant's default certificates (default: `omada`). |
 | `timezone` | string | No | Custom timezone (e.g., `Europe/Amsterdam`). If left blank, automatically detected from Home Assistant. |
-| `schedule_frequency` | string | No | Certificate check schedule frequency: `daily` (or `every day`), `weekly` (Sundays), `monthly` (1st of month). Default: `daily`. |
+| `schedule_frequency` | string | No | Certificate check schedule frequency: `daily`, `weekly` (Sundays), `monthly` (1st of month). Default: `daily`. |
 | `schedule_time` | string | No | Maintenance check time in 24h format (e.g. `03:00`). Default: `03:00`. |
 | `omada.enabled` | boolean | **Yes** | Set to `true` to push certificates to Omada Controller automatically. |
 | `omada.url` | string | Conditional | URL of your Omada Controller (e.g. `https://192.168.1.1:8043`). |
