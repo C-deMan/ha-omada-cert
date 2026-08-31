@@ -333,12 +333,21 @@ class IngressHandler(BaseHTTPRequestHandler):
             <button id="btnCheck" class="btn btn-accent" onclick="triggerAction('check')">
                 🔄 Check & Sync Certificate Now
             </button>
+            <button id="btnForce" class="btn btn-danger" onclick="triggerAction('force_renew')">
+                ⚡ Force Renew Certificate Now
+            </button>
             <button id="btnClear" class="btn btn-muted" onclick="triggerAction('clear_logs')">
                 🧹 Clear Log File
             </button>
             <button class="btn" onclick="location.reload()">
                 🔃 Refresh Dashboard
             </button>
+        </div>
+        <div style="margin-bottom: 20px; font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="chkForceUpload" style="cursor: pointer; width: 16px; height: 16px;">
+            <label for="chkForceUpload" style="cursor: pointer; user-select: none;">
+                Force full Let's Encrypt renewal on next check (bypasses expiration check)
+            </label>
         </div>
 
         <div class="console-card">
@@ -363,16 +372,24 @@ class IngressHandler(BaseHTTPRequestHandler):
         
         async function triggerAction(action) {{
             const btnCheck = document.getElementById("btnCheck");
+            const btnForce = document.getElementById("btnForce");
             const btnClear = document.getElementById("btnClear");
+            const chkForce = document.getElementById("chkForceUpload");
             const output = document.getElementById("output");
             const actionTime = document.getElementById("actionTime");
 
-            btnCheck.disabled = true;
-            btnClear.disabled = true;
-            output.innerText = "Executing " + action + "... please wait...";
+            let targetAction = action;
+            if (action === "check" && chkForce && chkForce.checked) {{
+                targetAction = "force_renew";
+            }}
+
+            if (btnCheck) btnCheck.disabled = true;
+            if (btnForce) btnForce.disabled = true;
+            if (btnClear) btnClear.disabled = true;
+            output.innerText = "Executing " + targetAction + "... please wait...";
 
             try {{
-                const res = await fetch(baseUrl + "/api/" + action, {{ method: "POST" }});
+                const res = await fetch(baseUrl + "/api/" + targetAction, {{ method: "POST" }});
                 const data = await res.json();
                 output.innerText = data.output || data.message || "Action finished.";
                 actionTime.innerText = new Date().toLocaleTimeString();
@@ -382,8 +399,9 @@ class IngressHandler(BaseHTTPRequestHandler):
             }} catch (err) {{
                 output.innerText = "Error executing action: " + err;
             }} finally {{
-                btnCheck.disabled = false;
-                btnClear.disabled = false;
+                if (btnCheck) btnCheck.disabled = false;
+                if (btnForce) btnForce.disabled = false;
+                if (btnClear) btnClear.disabled = false;
             }}
         }}
     </script>
@@ -411,6 +429,52 @@ class IngressHandler(BaseHTTPRequestHandler):
             cmd = f"python3 /deploy_omada.py deploy '{cert_path}' '{key_path}' '{CONFIG_PATH}'"
             success, out = run_command_action(cmd)
             self._send_json({"success": success, "output": out})
+            return
+
+        if path.endswith("/api/force_renew"):
+            options = {}
+            if os.path.exists(CONFIG_PATH):
+                try:
+                    with open(CONFIG_PATH, "r") as f:
+                        options = json.load(f)
+                except Exception:
+                    pass
+
+            # Create force flag file for background daemon
+            try:
+                with open("/data/force_cert_renewal", "w") as f:
+                    f.write("force\n")
+            except Exception:
+                pass
+
+            domains = options.get("domains", [])
+            primary_domain = domains[0] if domains else ""
+            email = options.get("letsencrypt_email", "")
+            cf_token = options.get("cloudflare_api_token", "")
+            staging = options.get("letsencrypt_staging", False)
+
+            cf_ini = "/data/letsencrypt/cloudflare.ini"
+            domain_args = " ".join([f"-d {d}" for d in domains])
+            staging_arg = "--staging" if staging else ""
+
+            # Run certbot with --force-renewal directly
+            certbot_cmd = (
+                f"certbot certonly --config-dir /data/letsencrypt --work-dir /data/letsencrypt-work "
+                f"--logs-dir /data/letsencrypt-log --dns-cloudflare --dns-cloudflare-credentials '{cf_ini}' "
+                f"--dns-cloudflare-propagation-seconds 30 --non-interactive --agree-tos --email '{email}' "
+                f"--cert-name '{primary_domain}' --key-type rsa --rsa-key-size 2048 --force-renewal {staging_arg} {domain_args}"
+            )
+            success, cert_out = run_command_action(certbot_cmd)
+
+            if success:
+                cert_path = f"/data/letsencrypt/live/{primary_domain}/fullchain.pem"
+                key_path = f"/data/letsencrypt/live/{primary_domain}/privkey.pem"
+                deploy_cmd = f"python3 /deploy_omada.py deploy '{cert_path}' '{key_path}' '{CONFIG_PATH}'"
+                d_success, d_out = run_command_action(deploy_cmd)
+                full_out = f"Certbot Output:\n{cert_out}\n\nOmada Deploy Output:\n{d_out}"
+                self._send_json({"success": d_success, "output": full_out})
+            else:
+                self._send_json({"success": False, "output": f"Certbot Force Renewal Failed:\n{cert_out}"})
             return
 
         if path.endswith("/api/clear_logs"):

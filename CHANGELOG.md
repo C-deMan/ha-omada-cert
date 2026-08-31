@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.5] - 2026-08-31
+
+### Added
+- **Force Renewal Action & Option in Web UI Dashboard**:
+  - Added dedicated **⚡ Force Renew Certificate Now** button in the Web UI.
+  - Added a toggle checkbox **"Force full Let's Encrypt renewal on next check (bypasses expiration check)"**.
+  - Invokes Certbot with `--force-renewal` immediately requesting fresh production/RSA certificates and pushing them to Omada.
+
 ## [1.3.4] - 2026-08-31
 
 ### Added

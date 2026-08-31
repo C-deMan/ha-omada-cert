@@ -218,6 +218,7 @@ deploy_certificates() {
 }
 
 run_certbot() {
+    local force_flag="$1"
     print_cycle_start
     log_info "Checking / Renewing certificates with Certbot (2048-bit RSA)..."
 
@@ -242,6 +243,12 @@ run_certbot() {
         "--keep-until-expiring"
         "--expand"
     )
+
+    if [ "$force_flag" = "force" ] || [ -f "/data/force_cert_renewal" ]; then
+        log_info "Force renewal flag detected. Forcing immediate certificate issuance from Let's Encrypt..."
+        CERTBOT_FLAGS+=("--force-renewal")
+        rm -f "/data/force_cert_renewal"
+    fi
 
     # If an existing key exists but is not an unencrypted RSA key (e.g. default ECDSA), force renewal to RSA
     if [ -f "$PRIVKEY_FILE" ]; then
