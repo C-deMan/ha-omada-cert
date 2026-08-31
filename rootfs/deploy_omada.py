@@ -45,14 +45,14 @@ def get_cert_details_file(cert_path):
         return {}
 
 
-def get_live_tls_cert_details(host, port):
+def get_live_tls_cert_details(host, port, sni_hostname=None):
     """Retrieve SHA256 fingerprint, subject, and notAfter from the server's live TLS connection."""
     try:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         with socket.create_connection((host, int(port)), timeout=5) as sock:
-            with ctx.wrap_socket(sock) as ssock:
+            with ctx.wrap_socket(sock, server_hostname=sni_hostname if sni_hostname else None) as ssock:
                 der_cert = ssock.getpeercert(binary_form=True)
                 if not der_cert:
                     return None
@@ -72,7 +72,7 @@ def get_live_tls_cert_details(host, port):
                         info[k.strip().lower()] = v.strip()
                 return info
     except Exception as exc:
-        logger.debug(f"Could not connect via TLS to {host}:{port}: {exc}")
+        logger.debug(f"Could not connect via TLS to {host}:{port} (SNI={sni_hostname}): {exc}")
         return None
 
 
@@ -460,17 +460,41 @@ def execute_deployment(cert_path, key_path, options_file, mode="deploy"):
         if p not in ports_to_check:
             ports_to_check.append(p)
 
+    domains = options.get("domains", [])
+    primary_domain = domains[0] if domains else None
+
     live_cert = None
     for p in ports_to_check:
-        live_cert = get_live_tls_cert_details(host, p)
-        if live_cert:
-            logger.info(f"Omada Live TLS Certificate (port {p}): Subject={live_cert.get('subject')}, Expires={live_cert.get('notafter')}")
+        # Test with SNI for the configured domain, then without SNI
+        for sni in [primary_domain, None]:
+            if not sni and primary_domain:
+                continue
+            live_cert = get_live_tls_cert_details(host, p, sni_hostname=sni)
+            if live_cert:
+                logger.info(f"Omada Live TLS Certificate (port {p}, SNI={sni or 'None'}): Subject={live_cert.get('subject')}, Expires={live_cert.get('notafter')}")
+                if local_fp and live_cert.get("sha256 fingerprint") == local_fp:
+                    break
+        if live_cert and local_fp and live_cert.get("sha256 fingerprint") == local_fp:
             break
+
+    # Read persistent record of last successfully deployed certificate
+    last_deployed_fp = None
+    if os.path.exists("/data/last_deployed_cert_fingerprint"):
+        try:
+            with open("/data/last_deployed_cert_fingerprint", "r") as f:
+                last_deployed_fp = f.read().strip()
+        except Exception:
+            pass
 
     existing_cert = get_openapi_certificate_info(session, base_urls, token, omadac_id)
     if existing_cert is not None:
-        if live_cert and local_fp and live_cert.get("sha256 fingerprint") == local_fp and existing_cert.get("enable") is True:
-            logger.info("Omada Controller is already active with the valid, matching certificate. No update required.")
+        is_enabled = existing_cert.get("enable") is True
+        is_pem = existing_cert.get("cerType") == "PEM"
+        live_match = bool(live_cert and local_fp and live_cert.get("sha256 fingerprint") == local_fp)
+        saved_fp_match = bool(last_deployed_fp and local_fp and last_deployed_fp == local_fp)
+
+        if live_match or (is_enabled and is_pem) or (saved_fp_match and is_pem):
+            logger.info("Omada Controller is already active with the valid, matching certificate. No upload required.")
             return True
 
     logger.info("Omada Controller certificate needs updating (expired, disabled, or does not match). Proceeding with upload...")
@@ -498,6 +522,12 @@ def execute_deployment(cert_path, key_path, options_file, mode="deploy"):
     uploaded = upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_path, key_path, cert_bytes, key_bytes, combined_pem_bytes)
     if uploaded:
         logger.info("Omada SSL certificate and RSA private key uploaded successfully via OpenAPI.")
+        if local_fp:
+            try:
+                with open("/data/last_deployed_cert_fingerprint", "w") as f:
+                    f.write(local_fp)
+            except Exception:
+                pass
         return True
 
     logger.error("Failed to upload SSL certificate to Omada Controller via OpenAPI.")

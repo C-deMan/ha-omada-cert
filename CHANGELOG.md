@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.5] - 2026-08-31
+
+### Fixed
+- **Prevent Unnecessary Re-Uploads on Startup**:
+  - Added SNI hostname (`omada.local.cdeman.net`) to the live TLS probe when checking controller endpoints on IP addresses, ensuring Omada returns the active domain certificate rather than the default self-signed fallback.
+  - Added persistent fingerprint matching (`/data/last_deployed_cert_fingerprint`), so the add-on recognizes when the controller already has the current certificate installed and avoids repeating the upload cycle on container restarts.
+
 ## [1.4.4] - 2026-08-31
 
 ### Added
