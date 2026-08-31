@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.4.3] - 2026-08-31
+
+### Added
+- **Omada Controller Reboot Button in Web Dashboard**: Added on-demand **⚡ Reboot Omada Controller** button in the Ingress web dashboard calling `deploy_omada.py reboot` across candidate Omada OpenAPI & Web API reboot endpoints.
+
 ## [1.4.2] - 2026-08-31
 
 ### Fixed

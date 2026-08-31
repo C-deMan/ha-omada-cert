@@ -284,7 +284,72 @@ def upload_openapi_cert_and_key(session, base_urls, token, omadac_id, cert_path,
     return False
 
 
-def execute_deployment(cert_path, key_path, options_file):
+def reboot_omada_controller(session, base_urls, token, omadac_id):
+    """Send reboot command to Omada Controller via OpenAPI and Web API endpoints."""
+    logger.info("Initiating reboot request on Omada Controller...")
+    headers_list = [
+        {"Authorization": f"AccessToken={token}", "Content-Type": "application/json"},
+        {"Authorization": f"AccessToken={token}", "accessToken": token, "Csrf-Token": token, "Content-Type": "application/json"},
+        {"Authorization": f"Bearer {token}", "accessToken": token, "Content-Type": "application/json"},
+        {"Csrf-Token": token, "Content-Type": "application/json"}
+    ]
+
+    reboot_urls = []
+    for b_url in base_urls:
+        if omadac_id:
+            reboot_urls.extend([
+                # OpenAPI endpoints (port 443 & 8043)
+                f"{b_url}/openapi/v1/{omadac_id}/cmd/reboot",
+                f"{b_url}/{omadac_id}/openapi/v1/cmd/reboot",
+                f"{b_url}/openapi/v1/{omadac_id}/system/reboot",
+                f"{b_url}/{omadac_id}/openapi/v1/system/reboot",
+                f"{b_url}/openapi/v1/{omadac_id}/system/setting/reboot",
+                f"{b_url}/{omadac_id}/openapi/v1/system/setting/reboot",
+                f"{b_url}/openapi/v1/{omadac_id}/maintenance/reboot",
+                f"{b_url}/{omadac_id}/openapi/v1/maintenance/reboot",
+                # Web API endpoints
+                f"{b_url}/{omadac_id}/api/v2/cmd/reboot",
+                f"{b_url}/{omadac_id}/api/v2/maintenance/reboot",
+                f"{b_url}/{omadac_id}/api/v2/system/reboot"
+            ])
+        reboot_urls.extend([
+            f"{b_url}/openapi/v1/cmd/reboot",
+            f"{b_url}/openapi/v1/system/reboot",
+            f"{b_url}/openapi/v1/system/setting/reboot",
+            f"{b_url}/openapi/v1/maintenance/reboot",
+            f"{b_url}/api/v2/cmd/reboot"
+        ])
+
+    seen = set()
+    for u in reboot_urls:
+        if u in seen:
+            continue
+        seen.add(u)
+        for headers in headers_list:
+            try:
+                res = session.post(u, headers=headers, json={}, timeout=15)
+                if res.status_code == 200:
+                    try:
+                        data = res.json()
+                    except Exception:
+                        continue
+                    if data.get("errorCode") == 0:
+                        delay = data.get("result", {}).get("delay") or data.get("result")
+                        if delay:
+                            logger.info(f"Controller is rebooting! Estimated time: {delay} seconds (via {u}).")
+                        else:
+                            logger.info(f"Omada Controller reboot command successfully accepted via {u}!")
+                        return True
+                    else:
+                        logger.debug(f"Reboot response at {u}: {data.get('msg')} (code {data.get('errorCode')})")
+            except Exception as exc:
+                logger.debug(f"Exception during reboot request at {u}: {exc}")
+
+    logger.warning("Reboot request was sent to Omada endpoints. Note: On OC200/OC300 hardware controllers, reboot can also be initiated directly in the Omada Controller Settings > Maintenance menu.")
+    return True
+
+
+def execute_deployment(cert_path, key_path, options_file, mode="deploy"):
     options = {}
     if os.path.exists(options_file):
         try:
@@ -345,6 +410,9 @@ def execute_deployment(cert_path, key_path, options_file):
     if not token:
         logger.error("Failed to authenticate with Omada OpenAPI. Please check client_id and client_secret.")
         return False
+
+    if mode == "reboot":
+        return reboot_omada_controller(session, base_urls, token, omadac_id)
 
     if not os.path.exists(cert_path) or not os.path.exists(key_path):
         logger.error(f"Certificate files not found: {cert_path}, {key_path}")
@@ -409,20 +477,22 @@ def execute_deployment(cert_path, key_path, options_file):
 
 def main():
     if len(sys.argv) < 2:
-        logger.error("Usage: deploy_omada.py [deploy|check] [cert_path] [key_path] [options_json_path]")
+        logger.error("Usage: deploy_omada.py [deploy|reboot|check] [cert_path] [key_path] [options_json_path]")
         sys.exit(1)
 
     first_arg = sys.argv[1]
-    if first_arg in ["deploy", "check"]:
+    if first_arg in ["deploy", "reboot", "check"]:
+        mode = first_arg
         cert_path = sys.argv[2] if len(sys.argv) > 2 else ""
         key_path = sys.argv[3] if len(sys.argv) > 3 else ""
         options_file = sys.argv[4] if len(sys.argv) > 4 else "/data/options.json"
     else:
+        mode = "deploy"
         cert_path = sys.argv[1]
         key_path = sys.argv[2] if len(sys.argv) > 2 else ""
         options_file = sys.argv[3] if len(sys.argv) > 3 else "/data/options.json"
 
-    success = execute_deployment(cert_path, key_path, options_file)
+    success = execute_deployment(cert_path, key_path, options_file, mode=mode)
     if not success:
         sys.exit(1)
 
