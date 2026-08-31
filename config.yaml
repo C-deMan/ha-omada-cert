@@ -11,10 +11,8 @@ arch:
   - i386
 init: false
 startup: "services"
-boot: "auto"
 homeassistant_api: true
 ingress: true
-ingress_port: 8099
 panel_icon: "mdi:certificate"
 map:
   - "ssl:rw"
