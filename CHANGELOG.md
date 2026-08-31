@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.7] - 2026-08-31
+
+### Added
+- **Web UI Logo & Visual Improvements**: Embedded the official add-on logo in the Ingress web dashboard header.
+- **Removed Redundant Controls**: Removed the force checkbox in favor of the dedicated one-click **⚡ Force Renew Certificate Now** action button.
+- **Documentation & Privacy Cleanup**: Sanitized domain references across all documentation and changelogs to generic placeholders (`omada.yourdomain.com`).
+
 ## [1.4.6] - 2026-08-31
 
 ### Changed
@@ -10,7 +17,7 @@
 
 ### Fixed
 - **Prevent Unnecessary Re-Uploads on Startup**:
-  - Added SNI hostname (`omada.local.cdeman.net`) to the live TLS probe when checking controller endpoints on IP addresses, ensuring Omada returns the active domain certificate rather than the default self-signed fallback.
+  - Added SNI hostname to the live TLS probe when checking controller endpoints on IP addresses, ensuring Omada returns the active domain certificate rather than the default self-signed fallback.
   - Added persistent fingerprint matching (`/data/last_deployed_cert_fingerprint`), so the add-on recognizes when the controller already has the current certificate installed and avoids repeating the upload cycle on container restarts.
 
 ## [1.4.4] - 2026-08-31
@@ -40,6 +47,7 @@
 ### Changed
 - **Direct Production Mode Default**: Completely removed the staging argument and options. All requests and renewals now explicitly and solely target the official Let's Encrypt Production ACME directory (`https://acme-v02.api.letsencrypt.org/directory`), ensuring certificates are always issued by trusted public CAs with full SAN recognition.
 - Automatically replaces any existing staging certificates on the next check or on clicking **⚡ Force Renew Certificate Now**.
+
 ## [1.3.5] - 2026-08-31
 
 ### Added
@@ -56,7 +64,7 @@
 ## [1.3.3] - 2026-08-31
 
 ### Fixed
-- **Certificate Chain & Leaf Upload Optimization**: Ensured the server leaf certificate (`cert.pem`) is prioritized for upload so the controller recognizes the host subject and SANs (`omada.local.cdeman.net`).
+- **Certificate Chain & Leaf Upload Optimization**: Ensured the server leaf certificate (`cert.pem`) is prioritized for upload so the controller recognizes the host subject and SANs (`omada.yourdomain.com`).
 
 ## [1.3.2] - 2026-08-31
 

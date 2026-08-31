@@ -60,12 +60,6 @@ omada:
 | `omada.client_secret` | string | **Yes** | Omada OpenAPI Application Client Secret. |
 | `omada.omadac_id` | string | No | Controller ID (auto-detected if omitted). |
 | `omada.verify_ssl` | boolean | No | Set to `false` if your Omada controller currently uses a self-signed cert (default: `false`). |
-| `omada.enabled` | boolean | **Yes** | Set to `true` to push certificates to Omada Controller automatically. |
-| `omada.url` | string | Conditional | URL of your Omada Controller (e.g. `https://192.168.1.1:8043`). |
-| `omada.client_id` | string | **Yes** | Omada OpenAPI Application Client ID (App ID). |
-| `omada.client_secret` | string | **Yes** | Omada OpenAPI Application Client Secret. |
-| `omada.omadac_id` | string | No | Controller ID (auto-detected if omitted). |
-| `omada.verify_ssl` | boolean | No | Set to `false` if your Omada controller currently uses a self-signed cert (default: `false`). |
 
 ### Setting up Omada OpenAPI Application
 

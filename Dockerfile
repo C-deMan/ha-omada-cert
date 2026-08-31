@@ -28,8 +28,10 @@ RUN \
         urllib3 \
     && apk del gcc musl-dev python3-dev libffi-dev openssl-dev
 
-# Copy application scripts and add-on configuration
+# Copy application scripts, icons, and add-on configuration
 COPY config.yaml /etc/addon_config.yaml
+COPY logo.png /logo.png
+COPY icon.png /icon.png
 COPY rootfs /
 
 WORKDIR /

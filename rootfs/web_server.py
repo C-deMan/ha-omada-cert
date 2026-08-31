@@ -115,6 +115,17 @@ class IngressHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path.endswith("/logo.png") or path.endswith("/icon.png"):
+            img_path = "/logo.png" if os.path.exists("/logo.png") else "/icon.png"
+            if os.path.exists(img_path):
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.end_headers()
+                with open(img_path, "rb") as f:
+                    self.wfile.write(f.read())
+                return
+
         if path.endswith("/api/status"):
             self._send_json(get_status_data())
             return
@@ -175,7 +186,13 @@ class IngressHandler(BaseHTTPRequestHandler):
             margin: 0;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
+        }}
+        .header-logo {{
+            width: 38px;
+            height: 38px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
         }}
         .grid {{
             display: grid;
@@ -284,7 +301,10 @@ class IngressHandler(BaseHTTPRequestHandler):
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔒 Omada & Cloudflare SSL Certificate Manager</h1>
+            <h1>
+                <img src="{ingress_path}/logo.png" alt="Logo" class="header-logo" onerror="this.style.display='none'">
+                <span>Omada & Cloudflare SSL Certificate Manager</span>
+            </h1>
             <div>{cert_badge}</div>
         </div>
 
@@ -344,12 +364,6 @@ class IngressHandler(BaseHTTPRequestHandler):
                 🔃 Refresh Dashboard
             </button>
         </div>
-        <div style="margin-bottom: 20px; font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" id="chkForceUpload" style="cursor: pointer; width: 16px; height: 16px;">
-            <label for="chkForceUpload" style="cursor: pointer; user-select: none;">
-                Force full Let's Encrypt renewal on next check (bypasses expiration check)
-            </label>
-        </div>
 
         <div class="console-card">
             <div class="console-header">
@@ -375,22 +389,16 @@ class IngressHandler(BaseHTTPRequestHandler):
             const btnCheck = document.getElementById("btnCheck");
             const btnForce = document.getElementById("btnForce");
             const btnClear = document.getElementById("btnClear");
-            const chkForce = document.getElementById("chkForceUpload");
             const output = document.getElementById("output");
             const actionTime = document.getElementById("actionTime");
-
-            let targetAction = action;
-            if (action === "check" && chkForce && chkForce.checked) {{
-                targetAction = "force_renew";
-            }}
 
             if (btnCheck) btnCheck.disabled = true;
             if (btnForce) btnForce.disabled = true;
             if (btnClear) btnClear.disabled = true;
-            output.innerText = "Executing " + targetAction + "... please wait...";
+            output.innerText = "Executing " + action + "... please wait...";
 
             try {{
-                const res = await fetch(baseUrl + "/api/" + targetAction, {{ method: "POST" }});
+                const res = await fetch(baseUrl + "/api/" + action, {{ method: "POST" }});
                 const data = await res.json();
                 output.innerText = data.output || data.message || "Action finished.";
                 actionTime.innerText = new Date().toLocaleTimeString();
