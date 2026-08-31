@@ -20,9 +20,11 @@ A Home Assistant Supervisor Add-on to automatically generate, renew, and deploy 
 
 ## Quick Start
 
+[![Open your Home Assistant instance and show the add-on store with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FC-deMan%2Fha-omada-cert)
+
 ### 1. Add Repository to Home Assistant
 
-In Home Assistant:
+Click the badge above or manually in Home Assistant:
 1. Go to **Settings** -> **Add-ons** -> **Add-on Store**.
 2. Click the three dots in the upper right -> **Repositories**.
 3. Add this URL:

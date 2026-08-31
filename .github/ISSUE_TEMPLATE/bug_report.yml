@@ -1,0 +1,39 @@
+name: "🐛 Bug Report"
+description: "File a bug report for Omada & Cloudflare SSL Certificate Manager"
+title: "[BUG]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue! Please check if the issue is already reported before submitting.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Describe the bug"
+      description: "A clear and concise description of what the bug is."
+      placeholder: "e.g., Certificate upload fails with error code..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Add-on Log Output"
+      description: "Paste your sanitized add-on logs here (make sure to remove tokens/passwords)."
+      render: text
+    validations:
+      required: false
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "Omada Controller Type"
+      options:
+        - "Hardware Controller (OC200)"
+        - "Hardware Controller (OC300)"
+        - "Software Controller (Linux/Docker/Windows)"
+        - "Other"
+    validations:
+      required: true
